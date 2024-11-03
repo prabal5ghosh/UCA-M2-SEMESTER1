@@ -16,203 +16,6 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 #install.packages("mvtnorm")
 library(mvtnorm)
-EMalgo <- function(X,K,n.iter=50,...){
-  n = nrow(X); p = ncol(X)
-  P = matrix(NA,n,K)
-  
-  # Initialize
-  prop = rep(1/K,K)
-  mu = matrix(rnorm(K*p),nrow=K,ncol=p)
-  Sigma = array(0,dim = c(K,p,p))
-  for (k in 1:K) Sigma[k,,] = diag(p)
-  
-  # The EM loop
-  for (it in 1:n.iter){ cat('.')
-    
-
-    # E step
-    for (k in 1:K) P[,k] = prop[k] * dmvnorm(X,mu[k,],Sigma[k,,])
-    P = P / rowSums(P) %*% matrix(1,1,K) # Normalization
-    
-  
-    
-    # M step
-    for (k in 1:K){
-      prop[k] = sum(P[,k]) / n
-      mu[k,] = 1/sum(P[,k]) * colSums(P[,k]%*%matrix(1,1,p) * X)
-      Ak = P[,k]%*%matrix(1,1,p) * (X - matrix(1,n,1)%*%mu[k,])
-      Bk = X - matrix(1,n,1) %*% mu[k,]
-      Sigma[k,,] = 1/sum(P[,k]) * t(Ak) %*% Bk
-    }
-  } 
-  cat('\n')
-  
- list(P = P, prop = prop, mu = mu, Sigma = Sigma)
-}
-```
-
-```{r}
-X = rbind(rmvnorm(100,c(0,0),0.1*diag(2)),
-          rmvnorm(200,c(-2,2),0.2*diag(2)))
-plot(X)
-```
-
-```{r}
-out = EMalgo(X,2)
-out$mu
-```
-
-
-```{r}
-plot(X)
-points(out$mu, col=c(2,3), pch= 19, cex = 3)
-```
-
-
-
-
-
-
-
-
-
-
-
-
-```{r}
-library(mvtnorm)
-
-EMalgo <- function(X, K, n.iter=50, ...){
-  n = nrow(X); p = ncol(X)
-  P = matrix(NA, n, K)
-  
-  # Initialize
-  prop = rep(1/K, K)
-  mu = matrix(rnorm(K * p), nrow = K, ncol = p)
-  Sigma = array(0, dim = c(K, p, p))
-  for (k in 1:K) Sigma[k,,] = diag(p)
-  
-  # The EM loop
-  for (it in 1:n.iter) {
-    cat('Iteration:', it, '\n')
-    
-    
-    # E step
-    for (k in 1:K) P[,k] = prop[k] * dmvnorm(X, mu[k,], Sigma[k,,])
-    P = P / rowSums(P) %*% matrix(1, 1, K) # Normalization
-    
-    # M step
-    for (k in 1:K) {
-      prop[k] = sum(P[,k]) / n
-      mu[k,] = colSums(P[,k] * X) / sum(P[,k])
-      Ak = P[,k] * (X - matrix(mu[k,], n, p, byrow=TRUE))
-      Sigma[k,,] = t(Ak) %*% (X - matrix(mu[k,], n, p, byrow=TRUE)) / sum(P[,k])
-    }
-    
-    # Print intermediate results
-    cat('Proportions:', prop, '\n')
-    cat('Means:\n')
-    print(mu)
-    cat('Covariances:\n')
-    for (k in 1:K) print(Sigma[k,,])
-    cat('-------------------------\n')
-  }
-  
-  list(P = P, prop = prop, mu = mu, Sigma = Sigma)
-}
-
-# Test the algorithm
-X = rbind(rmvnorm(100, c(0,0), 0.1 * diag(2)),
-          rmvnorm(200, c(-2,2), 0.2 * diag(2)))
-
-plot(X)
-
-# Run the EM algorithm
-out = EMalgo(X, 2)
-out$mu
-points(out$mu, col=c(2,3), pch= 19, cex = 3)
-
-```
-
-
-
-
-
-
-
-```{r}
-library(mvtnorm)
-
-EMalgo <- function(X, K, n.iter=10, ...){
-  n = nrow(X); p = ncol(X)
-  P = matrix(NA, n, K)
-  
-  # Initialize
-  prop = rep(1/K, K)
-  mu = matrix(rnorm(K * p), nrow = K, ncol = p)
-  Sigma = array(0, dim = c(K, p, p))
-  for (k in 1:K) Sigma[k,,] = diag(p)
-  
-  # Prepare for plotting
-  plot(X, main="EM Algorithm: Clustering with Gaussian Mixture Model")
-  
-  # The EM loop
-  for (it in 1:n.iter) {
-    cat('Iteration:', it, '\n')
-    
-    # E step
-    for (k in 1:K) P[,k] = prop[k] * dmvnorm(X, mu[k,], Sigma[k,,])
-    P = P / rowSums(P) %*% matrix(1, 1, K) # Normalization
-    
-    # M step
-    for (k in 1:K) {
-      prop[k] = sum(P[,k]) / n
-      mu[k,] = colSums(P[,k] * X) / sum(P[,k])
-      Ak = P[,k] * (X - matrix(mu[k,], n, p, byrow=TRUE))
-      Sigma[k,,] = t(Ak) %*% (X - matrix(mu[k,], n, p, byrow=TRUE)) / sum(P[,k])
-    }
-    
-    # Print intermediate results
-    cat('Proportions:', prop, '\n')
-    cat('Means:\n')
-    print(mu)
-    cat('Covariances:\n')
-    for (k in 1:K) print(Sigma[k,,])
-    cat('-------------------------\n')
-    
-    # Plot the data and current cluster means
-    plot(X, main=paste("Iteration", it))
-    points(mu, col=c(2,3), pch=19, cex=3)
-    Sys.sleep(0.5)  # Add a slight delay for visualization purposes
-  }
-  
-  list(P = P, prop = prop, mu = mu, Sigma = Sigma)
-}
-
-# Test the algorithm
-X = rbind(rmvnorm(100, c(0,0), 0.1 * diag(2)),
-          rmvnorm(200, c(-2,2), 0.2 * diag(2)))
-
-# Run the EM algorithm
-out = EMalgo(X, 2)
-out$mu
-
-#points(out$mu, col=c(2,3), pch=19, cex=3)
-
-```
-
-
-
-```{r}
-```
-
-# Unsupervised learning
-
-## Clustering with GMM and the EM algorithm
-
-```{r}
-#install.packages("mvtnorm")
-library(mvtnorm)
 EMalgo <- function(X,K,n.iter=50,plot=FALSE,...){
   # Initialize
   n = nrow(X); p = ncol(X)
@@ -245,10 +48,23 @@ EMalgo <- function(X,K,n.iter=50,plot=FALSE,...){
     }
   } 
   cat('\n')
+  plot(X,col=max.col(P)+1); points(mu,col=c(2,3),pch=19,cex=3)
   
- list(P = P, prop = prop, mu = mu, Sigma = Sigma)
+  # Calculation of BIC
+  loglik = 0
+  for (k in 1:K) {
+    Xk = X - matrix(1,n,1) %*% mu[k,]
+    loglik = loglik + sum(log(prop[k]) - p/2*log(pi) 
+                 - 1/2 * log(det(Sigma[k,,]))
+                 - 1/2 * Xk %*% solve(Sigma[k,,]) %*% t(Xk))
+  }
+  bic = loglik - 1/2 * (K-1 + K*p*(p+1)) * log(n)
+  list(P = P, prop = prop, mu = mu, Sigma = Sigma, 
+       bic = bic, loglik = loglik)
 }
 ```
+
+Let's start with an easy situation:
 
 ```{r}
 X = rbind(rmvnorm(100,c(0,0),0.1*diag(2)),
@@ -263,22 +79,13 @@ plot(X)
 points(out$mu,col=c(2,3),pch=19,cex=3)
 ```
 
+Here, we can see the effect of each iteration on the inference of the means and the estimation of cluster memberships:
+
 ```{r}
 out = EMalgo(X,2,plot = TRUE,n.iter = 10)
 ```
 
-
-
-
-
-
-
-
-
-
-
-
-
+Let's now consider a more difficult problem:
 
 ```{r}
 X = rbind(rmvnorm(100,c(0,0),0.8*diag(2)),
@@ -286,76 +93,44 @@ X = rbind(rmvnorm(100,c(0,0),0.8*diag(2)),
 plot(X)
 ```
 
-
-
-
-
 ```{r}
-out = EMalgo(X,2,plot = TRUE,n.iter = 10)
-
-```
-
-
-
-
-```
-
-
-
-
-
-lets now choose value of K
-
-
-
-
-```{r}
-#install.packages("mvtnorm")
-library(mvtnorm)
-EMalgo <- function(X,K,n.iter=50,plot=FALSE,...){
-  # Initialize
-  n = nrow(X); p = ncol(X)
-  P = matrix(NA,n,K)
-  prop = rep(1/K,K)
-  mu = rmvnorm(K,mean = colMeans(X))
-  Sigma = array(0,dim = c(K,p,p))
-  for (k in 1:K) Sigma[k,,] = diag(p)
-  
-  # The EM loop
-  for (it in 1:n.iter){ cat('.')
-    # E step
-    for (k in 1:K) P[,k] = prop[k] * dmvnorm(X,mu[k,],Sigma[k,,])
-    P = P / rowSums(P) %*% matrix(1,1,K) # Normalization
-    
-    # optionnal plot
-    if (plot){
-      plot(X,col=max.col(P)+1)
-      points(mu,col=c(2,3),pch=19,cex=3)
-      Sys.sleep(0.1)
-    }
-    
-    # M step
-    for (k in 1:K){
-      prop[k] = sum(P[,k]) / n
-      mu[k,] = 1/sum(P[,k]) * colSums(P[,k]%*%matrix(1,1,p) * X)
-      Ak = P[,k]%*%matrix(1,1,p) * (X - matrix(1,n,1)%*%mu[k,])
-      Bk = X - matrix(1,n,1) %*% mu[k,]
-      Sigma[k,,] = 1/sum(P[,k]) * t(Ak) %*% Bk
-    }
-  } 
-  cat('\n')
-  plot(X, col= max.col(P)+1); points( mu, col=c(2,3), pch=19, cex=3)
-  
-  loglik = 0
-  for (k in 1:K) loglik= sum()
-  bic = loglik - 1/2 * (K-1+K*p*(p-1))*log(n)
- list(P = P, prop = prop, mu = mu, Sigma = Sigma)
-}
+out = EMalgo(X,2)
 ```
 
 ```{r}
-X = rbind(rmvnorm(100,c(0,0),0.1*diag(2)),
-          rmvnorm(200,c(-2,2),0.2*diag(2)))
+out$mu
+```
+
+Let's now consider the problem of choosing $K$:
+
+```{r}
+X = rbind(rmvnorm(100,c(0,0),0.4*diag(2)),
+          rmvnorm(200,c(-2,2),0.4*diag(2)))
 plot(X)
 ```
+
+
+```{r}
+par(mfrow = c(2,3))
+for (k in 1:6) EMalgo(X,k,n.iter = 50)
+```
+
+Let's try now to use BIC to select the best K:
+
+```{r}
+bic = rep(NA,6)
+for (k in 1:6) bic[k] = EMalgo(X,k)$bic
+plot(bic,type='b')
+```
+
+
+
+
+
+
+
+
+
+
+
 
