@@ -1,0 +1,327 @@
+---
+title: "MBSL-day1"
+author: "CB"
+date: "2024-09-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Supervised classification and the learning process
+
+## Linear Discriminant Analysis
+
+To illustrate the learning process, let's first consider Linear Discriminant Analysis (LDA) and the Iris data set:
+
+```{r}
+library(MASS)
+?lda
+```
+
+```{r}
+data(iris)
+?iris
+```
+
+```{r}
+dim(iris)
+```
+```{r}
+X = iris[,-5]
+Y = iris$Species
+```
+
+Let's now learn a first lda classifier (without respecting the minimal setup):
+
+```{r}
+f.lda = lda(X,Y)
+```
+
+We can have a look at what is inside the learned model:
+
+```{r}
+f.lda
+```
+
+Once we have the classifier, we can predict the class of a new observation $x^*$:
+
+```{r}
+x.star = c(6,2.8,5,1.6)
+out = predict(f.lda,x.star)
+out
+```
+
+Let's use CV for evaluating the performance of LDA:
+
+```{r}
+V = 15
+fold = rep(1:V,nrow(X)/V)
+err.lda = err.qda = rep(NA,V)
+for (v in 1:V){
+  # Split the data
+  X.learn = X[fold!=v,]
+  Y.learn = Y[fold!=v]
+  X.val = X[fold==v,]
+  Y.val = Y[fold==v]
+  
+  # Learn the classifier
+  f.lda = lda(X.learn,Y.learn)
+  f.qda = qda(X.learn,Y.learn)
+  
+  # Predict and evaluate the perf
+  out.lda = predict(f.lda,X.val)
+  out.qda = predict(f.qda,X.val)
+  err.lda[v] = sum(out.lda$class != Y.val) / length(Y.val)
+  err.qda[v] = sum(out.qda$class != Y.val) / length(Y.val)
+}
+
+cat("Err LDA:",mean(err.lda),"+/-",sd(err.lda),"\n")
+cat("Err QDA:",mean(err.qda),"+/-",sd(err.qda),"\n")
+```
+
+## Comparison with a ML technique: k-NN
+
+Let's first use k-NN to classify a new data point $x^*$:
+
+```{r}
+library(class)
+?knn
+```
+
+Conversly to LDA, there is no learning phase with knn and the call is just:
+
+```{r}
+x.star = c(6,2.8,5,1.6)
+out.knn = knn(X,x.star,Y,k=3)
+out.knn
+```
+
+> Exercise: adapt the above CV code for comparing the performance of LDA and 3-NN.
+
+```{r}
+V = 15
+fold = rep(1:V,nrow(X)/V)
+err.lda = err.knn = rep(NA,V)
+for (v in 1:V){
+  # Split the data
+  X.learn = X[fold!=v,]
+  Y.learn = Y[fold!=v]
+  X.val = X[fold==v,]
+  Y.val = Y[fold==v]
+  
+  # Learn the classifier
+  f.lda = lda(X.learn,Y.learn)
+  
+  # Predict and evaluate the perf
+  out.lda = predict(f.lda,X.val)
+  out.knn = knn(X.learn,X.val,Y.learn,k=3)
+  err.lda[v] = sum(out.lda$class != Y.val) / length(Y.val)
+  err.knn[v] = sum(out.knn != Y.val) / length(Y.val)
+}
+
+cat("Err LDA:",mean(err.lda),"+/-",sd(err.lda),"\n")
+cat("Err 3-NN:",mean(err.knn),"+/-",sd(err.knn),"\n")
+```
+
+This procedure (simple CV) allows to compare correctly two methods without tuning parameters. If you would like to know the general performance of k-NN, you have to use a double-CV procedure.
+
+Before that, let's look at the effect of varying k on the classification error:
+
+```{r}
+V = 15
+K.max = 50
+fold = rep(1:V,nrow(X)/V)
+err.knn = matrix(NA,K.max,V)
+
+for (k in 1:K.max){
+  for (v in 1:V){
+    # Split the data
+    X.learn = X[fold!=v,]
+    Y.learn = Y[fold!=v]
+    X.val = X[fold==v,]
+    Y.val = Y[fold==v]
+    
+    out.knn = knn(X.learn,X.val,Y.learn,k)
+    err.knn[k,v] = sum(out.knn != Y.val) / length(Y.val)
+  }
+}
+
+plot(1:K.max,rowMeans(err.knn),type='b',ylim = c(0,0.1))
+
+```
+
+And thanks to this, we can write a short function that will find by (internal) CV the best value of k for a give data set:
+
+```{r}
+knn.bestk <- function(X,Y,V=15,K.max=30){
+  fold = rep(1:V,nrow(X)/V)
+  err.knn = matrix(NA,K.max,V)
+  for (k in 1:K.max){
+    for (v in 1:V){
+      # Split the data
+      X.learn = X[fold!=v,]
+      Y.learn = Y[fold!=v]
+      X.val = X[fold==v,]
+      Y.val = Y[fold==v]
+      
+      out.knn = knn(X.learn,X.val,Y.learn,k)
+      err.knn[k,v] = sum(out.knn != Y.val) / length(Y.val)
+    }
+  }
+  return(which.min(rowMeans(err.knn)))
+}
+
+knn.bestk(X,Y)
+```
+
+And now, we can re-use the CV procedure to compare LDA and k-NN (with the internal search of the best k by CV):
+
+> Exercise: do it!
+
+```{r}
+V = 15
+fold = rep(1:V,nrow(X)/V)
+err.lda = err.knn = rep(NA,V)
+k.star = rep(NA,V)
+for (v in 1:V){
+  # Split the data
+  X.learn = X[fold!=v,]
+  Y.learn = Y[fold!=v]
+  X.val = X[fold==v,]
+  Y.val = Y[fold==v]
+  
+  # Learn and predict for LDA
+  f.lda = lda(X.learn,Y.learn)
+  out.lda = predict(f.lda,X.val)
+  
+  # Find the best k for k-nn and predict
+  k.star[v] = knn.bestk(X.learn,Y.learn)
+  out.knn = knn(X.learn,X.val,Y.learn,k=k.star[v])
+  
+  # Evaluate the errors
+  err.lda[v] = sum(out.lda$class != Y.val) / length(Y.val)
+  err.knn[v] = sum(out.knn != Y.val) / length(Y.val)
+}
+
+cat("Err LDA:",mean(err.lda),"+/-",sd(err.lda),"\n")
+cat("Err k-NN:",mean(err.knn),"+/-",sd(err.knn),"\n")
+cat("Average k for k-NN:",median(k.star))
+```
+
+
+## Logistic regression
+
+A basic call to logistic regression in R is as follows:
+
+```{r}
+pairs(X,col=Y)
+```
+To transform the Iris classification problem (with 3 classes) in a binary one, I propose to gather the classes 2 and 3.
+
+```{r}
+Y.bin = as.numeric(Y)
+Y.bin[Y.bin==3] = 2
+data = data.frame(X = X, Y = as.factor(Y))
+f.lreg = glm(Y ~ ., data = data, family = "binomial")
+```
+
+```{r}
+f.lreg
+```
+
+And classifying $x^*$ can be done as follows:
+
+```{r}
+data[151,] = c(5,2.8,2,1.6,NA)
+out.lreg = predict(f.lreg,data[151,1:4],type = "response")
+out.lreg
+```
+
+
+```{r}
+pairs(rbind(X,c(5,2.8,2,1.6)),col=c(Y.bin,3),pch=19)
+```
+> Exercise: evaluate and compare the performance of LDA and logistic regression on this (binary) classification problem using CV
+
+```{r}
+Y.bin = as.numeric(Y)
+Y.bin[Y.bin==2] = 1
+Y.bin[Y.bin==3] = 2
+
+# Using Y.bin instead of Y !!!
+V = 15
+fold = rep(1:V,nrow(X)/V)
+err.lda = err.qda = err.knn = err.lreg = rep(NA,V)
+k.star = rep(NA,V)
+for (v in 1:V){
+  # Split the data
+  X.learn = X[fold!=v,]
+  Y.learn = Y.bin[fold!=v]
+  X.val = X[fold==v,]
+  Y.val = Y.bin[fold==v]
+  
+  # Learn and predict for LDA
+  f.lda = lda(X.learn,Y.learn)
+  out.lda = predict(f.lda,X.val)
+  
+  # Learn and predict for QDA
+  f.qda = qda(X.learn,Y.learn)
+  out.qda = predict(f.qda,X.val)
+  
+  # Find the best k for k-nn and predict
+  k.star[v] = knn.bestk(X.learn,Y.learn)
+  out.knn = knn(X.learn,X.val,Y.learn,k=k.star[v])
+  
+  # for log. reg
+  data = data.frame(X = X.learn, Y = as.factor(Y.learn))
+  colnames(data) = c(colnames(X.learn),"Y")
+  f.lreg = glm(Y ~ ., data = data, family = "binomial")
+  out.lreg = (predict(f.lreg,X.val,type = "response") >= 0.5) + 1
+  
+  # Evaluate the errors
+  err.lda[v] = sum(out.lda$class != Y.val) / length(Y.val)
+  err.qda[v] = sum(out.qda$class != Y.val) / length(Y.val)
+  err.knn[v] = sum(out.knn != Y.val) / length(Y.val)
+  err.lreg[v] = sum(out.lreg != Y.val) / length(Y.val)
+}
+
+cat("Err LDA:",mean(err.lda),"+/-",sd(err.lda),"\n")
+cat("Err QDA:",mean(err.qda),"+/-",sd(err.qda),"\n")
+cat("Err lreg:",mean(err.lreg),"+/-",sd(err.lreg),"\n")
+cat("Err k-NN:",mean(err.knn),"+/-",sd(err.knn),"\n")
+cat("Average k for k-NN:",median(k.star))
+```
+
+```{r}
+pairs(X,col=Y.bin,pch=19)
+```
+
+Just for easing the interpretation of the classifiers, it is possible to plot the classification boundaries when we consider 2-D data (the two first variables for instance, for which the classification is difficult):
+
+```{r}
+XX = X[,1:2]
+x <- seq(min(XX[,1]),max(XX[,1]),length.out = 250)
+y <- seq(min(XX[,2]),max(XX[,2]), length.out = 250)
+S = expand.grid(x,y)
+colnames(S) = colnames(XX)
+
+f.lda = lda(XX,Y.bin)
+out.lda = predict(f.lda,S)
+
+plot(XX,type='n')
+points(S,col=as.numeric(out.lda$class)+1,pch=19)
+points(XX,col=1)
+```
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,776 @@
+---
+title: 'Practice on logistic regression'
+author: "Kevin Mottin & Vincent Vandewalle"
+date: "12 December 2023"
+output:
+  pdf_document:
+    number_sections: yes
+    toc: yes
+  html_notebook:
+    number_sections: yes
+    toc: yes
+  html_document:
+    number_sections: yes
+    df_print: paged
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+**Answer 1:** Loading the data:
+
+```{r}
+load("prema.RData")
+str(prema)
+prema$DIAB = as.factor(prema$DIAB)
+attach(prema)
+```
+
+Data summary:
+
+```{r}
+summary(prema)
+```
+
+The variable DIAB has 3 missing values ... This can cause issues in models involving this variable. If you run a logistic regression considering this variable, R will remove (without informing you) the three individuals with missing data to perform logistic regression (since all data must be complete to use logistic regression). Various solutions exist to handle this missing data problem:
+
+- Remove individuals with missing data
+- Remove the variable if it has too many missing values
+- Impute missing values: arbitrarily assign a value (mean, mode, conditional expectation)
+
+# Study of a binary variable
+
+## Descriptive statistics
+
+
+Study of the type of pregnancy to reproduce the results given in class.
+
+**Answer 2**: Contingency table
+
+Table of row profiles (distribution of PREMATURE given GEMEL)
+
+```{r}
+prop.table(table(GEMEL, PREMATURE), 1)
+```
+
+**Answer 3**: Probability of premature delivery in a multiple pregnancy (also seen in the previous table).
+
+```{r}
+35 / (35 + 4)
+
+```
+
+
+Finally, we could graphically represent the data as follows:
+
+```{r}
+plot(PREMATURE ~ GEMEL)
+```
+
+## Details of the first glm outputs
+
+**Answer 4**: Adjustment of the logistic regression model
+
+```{r}
+model1 <- glm(PREMATURE ~ GEMEL, family = "binomial", data = prema)
+model1
+```
+
+
+Here:
+
+- **Call**: displays the adjusted model
+- **Coefficients**: displays the estimated coefficients, here $\hat\beta_0 = 0.659$ and $\hat\beta_1 = 1.510$
+- **Degrees of Freedom**:
+  - 387 Total: For the Null model (without explanatory variable), number of data 388 - 1 because estimating the proportion of premature pregnancies
+  - 386 Residual: 388 - 2 because estimating two parameters
+- **Null Deviance**: 484.7, deviance of the Null model, i.e., $D_0 = -2\ell_0$ with $\ell_0$ the log-likelihood of the Null model
+- **Residual Deviance**: 473.7, model deviance, i.e., $D = -2\ell$ with $\ell$ the log-likelihood of the model
+- **AIC**: 477.7, AIC criterion: $AIC = -2\ell + 2\nu = D + 2\nu$ where $\nu$ is the number of parameters in the model
+
+Here, the "negative" levels of PREMATURE and "Simple" of GEMEL serve as reference levels (first levels of the variable).
+
+
+```{r}
+levels(PREMATURE)
+levels(GEMEL)
+```
+
+If needed, the `relevel` function can redefine the reference level.
+
+To make the connection with the course notations, the previous adjustment is equivalent to:
+```{r}
+Y = ifelse(PREMATURE == "positif", 1, 0)
+X = ifelse(GEMEL == "Multiple", 1, 0)
+head(cbind.data.frame(Y, PREMATURE, X, GEMEL))  # To understand the recoding
+glm(Y ~ X, family = "binomial")  # True to the course notations
+```
+
+
+In fact, a binary recoding of the variables is implicitly performed by calling `glm`.
+
+Finally, the model allows us to calculate different probabilities.
+
+
+```{r}
+b0 = model1$coefficients[1]
+b1 = model1$coefficients[2]
+b0
+b1
+# P(PREMATURE = positif | GEMEL = Simple) = 0.65
+exp(b0) / (1 + exp(b0))
+# P(PREMATURE = positif | GEMEL = Multiple) = 0.89
+exp(b0 + b1) / (1 + exp(b0 + b1))
+```
+
+
+
+### Computation of the log-likelihood, deviance and AIC criterion
+
+In the absence of an explanatory variable $Y \sim \mathcal{B}(\pi_1)$ i.e. $Y$ follows a Bernoulli distribution with parameter $\pi_1$: $P(Y = 0) = 1-\pi_1$ and $P(Y=1) = \pi_1$ which can also be written for $y \in \{0,1\}$$.
+$$
+P(Y = y) = \pi_1^{y}(1-\pi_1)^{1 - y}
+$$
+and therefore
+$$
+\ln P(Y=y) = y\ln \pi_1 + (1-y)\ln(1-\pi_1)
+$$
+So for a sample of $n$ individuals, the log-likelihood is the sum of the individual log-likelihoods
+$$
+\ell_0(\pi_1) = \sum_{i=1}^{n} \ln P(Y_i=y_i) = \sum_{i=1}^{n}  \left(y_i\ln \pi_1 + (1-y_i)\ln(1-\pi_1)\right) = n_1 \ln \pi_1 + n_0\ln(1-\pi_1) 
+$$
+noting $n_0$ the number of individuals in class $0$, and $n_1$ the number of individuals in class $1$. This likelihood is maximal for $\hat\pi_1 = \frac{n_1}{n}$ (the usual estimator of a proportion!!!). In the following, we simply note $\ell_0 = \ell_0(\hat\pi_1)$. Here the calculation is simply 
+```{r}
+table(PREMATURE)
+n = 388
+n0 = 123
+n1 = 265
+# l0 : log-likelihood of the Null model
+l0 = n1 * log(n1/n) + n0 * log(n0/n)
+l0
+```
+
+We can simply deduce the deviance $D_0$ of the null model
+```{r}
+D0 = -2*l0
+D0
+```
+
+In the case of the logistic model we wish to adjust, the log-likelihood is written :
+$$
+\ell(\beta) = \sum_{i=1}^n [y_i \log P(Y_i=1 | X_i = x_i;\beta) + (1-y_i)\log P(Y_i=0| X_i = x_i;\beta)]
+$$
+Here the maximum is no longer explicit (Newton-Raphson algorithm required, operated via the glm function). Hereafter we simply note $\ell = \ell(\hat\beta)$.
+
+```{r}
+p = predict(model1,prema,type = "response") #  P(Y=1|X=x_i)
+y = ifelse(PREMATURE == "positif",1,0) 
+# log-vraisemblance
+l = sum(y * log(p) + (1-y) * log(1-p))
+```
+
+The deviance of the model is obtained simply by doing $D = -2\ell$.
+```{r}
+D = -2*l
+D
+```
+
+Finally, the AIC criterion is calculated as follows
+```{r}
+nu = length(model1$coefficients)
+AIC = D + 2*nu
+AIC
+```
+
+## Testing the nullity of a coefficient, and calculating confidence intervals
+
+### Testing the nullity of a coefficient
+$$
+H_0 : \{beta_1 = 0\} \mbox{ against } H_1 : \{beta_1 \neq 0\} 
+$$
+
+**Answer 5:** Displaying the model summary we have 
+```{r}
+summary(model1)
+```
+
+The details of the calculation of the p-value associated with the nullity test for the $\beta_{GEMELMultiple}$ coefficient are as follows
+```{r}
+# Calculation of the p-value
+b1h = 1.5101 # Estimate
+sigmab1h = 0.5397 # Std. Error
+# z = 2.798  
+z = b1h/sigmab1h # z value, under H0, z is the realisation of an N(0,1) 
+z
+# p-value = 0.00514
+p.value = 2*pnorm(-abs(z))
+p.value
+# pchisq(z^2,df = 1,lower.tail = F) # using a Chi-square with 1 degree of freedom
+```
+Here we would reject the hypothesis of nullity of the coefficient at the 95% confidence level. The GEMEL variable therefore has a significant effect on the PREMATURE variable.
+
+Note that from an interpretation point of view, testing the nullity of the $\beta_{GEMELMultiple}$ coefficient is in fact equivalent to testing the independence of the PREMATURE and GEMEL variables, which could have been done using a Chi-square test.
+```{r}
+chisq.test(PREMATURE,GEMEL) # Chi2 test of independence
+```
+
+
+### Calculating confidence intervals
+
+Finally, we may also be interested in calculating confidence intervals for the parameters :
+```{r}
+confint.default(model1)
+```
+which can be calculated by hand as follows
+```{r}
+coef(model1) # Estimated parameter 
+vcov(model1) # Variance-covariance matrix of estimators
+# For b1 we calculate 
+coef(model1)[2] + c(-1,1)*qnorm(1-0.05/2)*sqrt(vcov(model1)[2,2])
+```
+
+In fact, reading vcov(model1) we can see that the two estimators $\hat\beta_0$ and $\hat\beta_1$ are not independent (non-zero covariance). We can construct a confidence ellipsoid on the pair $(\beta_0,\beta_1)$.
+```{r}
+library(car)
+confidenceEllipse(model1)
+```
+
+The confint function can also be used, but it calculates the confidence interval using the profiled likelihood 
+(http://www.math.umt.edu/patterson/ProfileLikelihoodCI.pdf), hence the message "Waiting for profiling to be done...". This produces significantly different confidence intervals. 
+```{r}
+# Calculation of confidence intervals
+confint(model1)
+```
+
+
+Let $\theta$ be the parameter on which we wish to calculate the interval. The aim is to determine the set of $\theta_0$ values such that the null hypothesis $H_0: \{\theta = \theta_0\}$ is not rejected at the $1-\alpha$ confidence level by considering a two-tailed test ($H_1: \{\theta \neq \theta_0\}$). Here we find the "classic" link between hypothesis testing and confidence intervals (http://www.mit.edu/~6.s085/notes/lecture2.pdf) ... However, here we are considering the maximum likelihood test (Likelihood Ratio Test), so an inversion of the profiled log-likelihood is necessary to determine this set of $\theta_0$ values (see later in the answers for more details).
+
+
+## Calculating odds ratios
+
+Calculation of the odds ratio from the estimated coefficient
+
+```{r}
+exp(coef(model1))[2]
+```
+
+Calculation of the odds ratio from the contingency table
+```{r}
+cotegrmultiple=35/4 #(35/39)/(4/39)
+cotegrsimple=230/119
+OR=cotegrmultiple/cotegrsimple
+OR
+```
+The odds of the event "the delivery is premature" is multiplied by 4.52 when we go from the "Single" modality to the "Multiple" modality for the GEMEL variable.
+
+# Study of a quantitative variable
+
+## Descriptive statistics
+
+**Answer 6:** Average neck clearing class by class 
+```{r}
+by(EFFACE, PREMATURE, mean)
+```
+
+You can also make graphs
+```{r}
+plot(EFFACE ~ PREMATURE)
+```
+and
+```{r}
+plot(PREMATURE ~ EFFACE)
+```
+which is based on a breakdown of the EFFACE variable into classes.
+
+We can also visualise the distribution of EFFACE in each of the classes as follows:
+```{r}
+library("ggplot2")
+ggplot(prema, aes(EFFACE, fill = PREMATURE)) + geom_density(alpha = 0.2)
+```
+
+
+It can therefore be seen that the greater the degree of cervical effacement, the greater the likelihood of premature delivery.
+
+## Model adjustment 
+
+**Answer 7:**
+
+```{r}
+model2 <- glm(PREMATURE ~ EFFACE, family="binomial", data=prema)
+summary(model2)
+```
+
+**Answer 8:** Calculation of the probability of preterm birth knowing that cervical effacement is equal to 60% (note that EFFACE is the value expressed as a percentage).
+```{r}
+beta=coef(model2)
+beta
+b0=beta[1]
+b1=beta[2]
+calculpi=function(x){
+  exp(b0+b1*x)/(1+exp(b0+b1*x))
+}
+calculpi(60)
+```
+**Answer 9:** The probability of premature delivery knowing EFFACE = 60 is therefore 77\% :
+$$
+P(PREAMTURE = \mbox{"positive"} | EFFACE = 60) = 77\%
+$$
+
+The shape of the function is as follows
+```{r}
+plot(calculpi,-200,200)
+abline(v = c(0,100),col = "red")
+```
+So we find the sigmoid form again, but in the context of our study x only varies between 0 and 100 (the area bounded by the red lines).
+
+Here we have growth in the probability of premature pregnancy as a function of the EFFACE variable (positive $\hat\beta_1$ coefficient).
+
+**Answer 10 :**
+```{r}
+pi_hat=predict(model2, prema, type="response")
+max(abs(pi_hat-calculpi(EFFACE))) # we therefore find the same values numerically
+```
+
+**Answer 11:** Comparison of the distribution of calculated probabilities between patients who gave birth prematurely and those who did not.
+
+
+
+```{r}
+boxplot(pi_hat ~ PREMATURE)
+```
+Here we have smaller average probabilities for patients with premature pregnancies than for the others. However, the separation is fairly small (overlapping boxplot).
+
+We can also compare the density of $\pi(x)$ in each of the classes: 
+```{r}
+library(lattice)
+gS = densityplot(~pi_hat, data = data.frame(prema, pi_hat), groups = PREMATURE,
+                 plot.points = FALSE, ref = TRUE, auto.key = list(columns = 1))
+print(gS)
+```
+
+Or using ggplot
+```{r}
+ggplot(data.frame(prema, pi_hat), aes(pi_hat, fill = PREMATURE)) + geom_density(alpha = 0.2)
+```
+
+
+# On the road to profiled likelihood continued!
+
+## What is profiled likelihood in fact?
+
+Suppose we want to produce a confidence interval on $\beta_1$ in the case of model1, we consider the profiled likelihood defined as follows
+$$
+\ell^p_{1}(\beta_1) = \max_{\beta_0} \ell(\beta_0,\beta_1).
+$$
+$\ell_1^p$ is the profiled likelihood of $\beta_1$, the profiled likelihood can be calculated from glm with the offset argument (fixed values) 
+```{r}
+b1 = 1.510 # example of the value of b1; here the value corresponding to the maximum likelihood
+GEMELMultiple = ifelse(GEMEL == "Multiple",1,0) # Column on which the regression is performed
+logLik(glm(PREMATURE~1,offset = b1*GEMELMultiple,family = "binomial")) # profiled likelihood associated with b1
+
+# In fact here we simply find the maximum likelihood in b0, b1
+l # logic ...
+```
+
+We can now write the profiled likelihood function lp, and plot it on the interval $[0;4]$.
+```{r}
+lp <- function(b1){
+  return(logLik(glm(PREMATURE~1,offset = b1*GEMELMultiple,family = "binomial")))
+}
+b1 = seq(0,4,length = 100)
+plot(b1,sapply(b1,lp),main = "Profiled likelihood",ylab = "lp",type = "l")
+```
+
+## Maximum likelihood ratio test ? Likelihood Ratio Test (LRT) !
+
+### LRT reminder: 
+
+Generally speaking, the LRT test statistic is written as follows
+$$
+LRT = - 2 \ln\frac{\max_{\beta \in B_{H_0}}L(\beta)}{\max_{\beta \in B_{H_1}}L(\beta)}
+$$
+where $L$ is the likelihood, $B_{H_0}$ the space of parameters under $H_0$ and $B_{H_1}$ the space of parameters under $H_1$ (we have $B_{H_0} \subset B_{H_1}$). It can be rewritten as 
+$$
+LRT = -2 \max_{\beta \in B_{H_0}}\ell(\beta) - [-2 \max_{\beta \in B_{H_1}}\ell(\beta)] = D_{H_0} - D_{H_1}
+$$
+with $\ell(\beta)$ the log-likelihood in $\beta$ and $D_{H_0}$ and $D_{H_1}$ the deviances under $H_0$ and $H_1$ respectively.
+
+Under $H_0$ 
+$$
+LRT \stackrel{longrightarrow}{tinymbox{approx}} \chi^2_{\nu_{H_1}-\nu_{H_0}}
+$$
+where $\nu_{H_1}$ and $\nu_{H_0}$ represent the degrees of freedom of the models under $H_0$ and $H_1$ respectively.
+
+### Application to profiled likelihood
+
+Let's return to our confidence interval objective on $\beta_1$ using the profiled likelihood. For a fixed $\tilde\beta_{1}$, we test $H_0: \tilde\beta_1 = \tilde\beta_{1}\}$ against $H_1: \tilde\beta_1 \neq \tilde\beta_{1}\}$.
+
+Under $H_0$
+$$
+2[\max_{\beta_0,\beta_1}\ell(\beta_0,\beta_1) - \max_{\beta_0}\ell(\beta_0,\tilde\beta_{1})] \stackrel{\longrightarrow}{tinymbox{approx}} \chi^2_1,
+$$
+in fact $\max_{\beta_0,\beta_1}\ell(\beta_0,\beta_1)$ is the maximum log-likelihood under $H_1$ ($\beta_0$ and $\beta_1$ free), where $\max_{\beta_0}\ell(\beta_0, \tilde\beta_{1})$ is the maximum log-likelihood under $H_0$ ($\beta_1$ constrained to be equal to $\tilde\beta_1$, and $\beta_0$ free).
+
+Using the previous notation, we have :
+$$
+2[\ell(\hat\beta_0,\hat\beta_1) - \ell^p_{1}(\tilde\beta_{1})] \stackrel{\longrightarrow}{\tiny\mbox{approx}} \chi^2_1.
+$$
+
+
+We do not reject $H_0$ if 
+$$
+2[\ell(\hat\beta_0,\hat\beta_1) - \ell^p_{1}(\tilde\beta_{1})] \leq \chi^2_{1;1-\alpha}
+$$
+
+In other words, if 
+$$
+\ell^p_{1}(\tilde\beta_{1}) \geq \ell(\hat\beta_0,\hat\beta_1) - \frac{1}{2}\chi^2_{1;1-\alpha}
+$$
+
+Thus we determine the set of values $\tilde\beta_1$ such that the previous inequality is verified.
+```{r}
+plot(b1,sapply(b1,lp),main = "Profiled likelihood",ylab = "lp",type = "l")
+abline(h = l - 0.5*qchisq(1-0.05,1), col = "red")
+```
+
+This is the set of values leading to a profiled likelihood above the red line.
+
+The limits of the interval are found by cancelling the function $g(\tilde\beta)$. 
+$$
+g(\tilde\beta_1) = \ell(\hat\beta_0,\hat\beta_1) - \ell^p_{1}(\tilde\beta_{1}) - \frac{1}{2}\chi^2_{1;1-\alpha}}
+$$
+
+```{r}
+g <- function(b1){
+  return(l - lp(b1) - 0.5*qchisq(1-0.05,1))
+}
+uniroot(g, c(0,1.5))$root # Search for the first root (between 0 and 1.5)
+uniroot(g, c(1.5,3))$root # Search for the second root (between 1.5 and 3)
+```
+The interval returned by the confint function is pretty much the same: $[0.5635285 ; 2.7352318]$. In the end, it's simpler to use confint ...
+```{r}
+confint(model1)
+```
+But now you know what the message "Waiting for profiling to be done..." means.  !!!
+
+# Fitting models with several explanatory variables
+
+## PREMATURE prediction from GEMEL and EFFACE
+
+**Answer 12 :** Model 3 is fitted
+
+```{r}
+model3 <- glm(PREMATURE ~ GEMEL + EFFACE, family = "binomial",
+              data = prema)
+summary(model3)
+```
+
+
+
+
+**Answer 13:** Note that model 2 is nested within model 3, so we can apply the maximum likelihood ratio test to test $H_{0} : {Y|X=x \mbox{ is from model 2}}$ against $H_1 : {Y|X=x \mbox{ is from model 3}}$, or more precisely to test the nullity of the additional coefficient of $M3$ with respect to $M2$, i.e. the coefficient $\beta_{GEMELMultiple}$.
+
+The command 
+```{r}
+anova(model2,model3,test="LRT")
+pchisq(7.7192,df = 1,lower.tail = F) # p-value
+```
+allows you to test nested models. 
+
+**Answer 14:** Here we retain model 3 because the additional coefficient associated with GEMEL is significantly different from 0 (low critical probability: $0.005464$). To be precise, we have $D_{mbox{model 2}} = $439.51 and $D_{mbox{model 3}} = $431.80. Under $H_0$, $D_{mbox{model 2}} - D_{\mbox{model 3}}$ comes from a $\chi^2_1$ (because one parameter more for model 3). Here $D_{mbox{model 2}} - D_{mbox{model 3}} = 439.51 - 431.80 = 7.7192$, hence the previous p-value calculation.
+
+# Fitting the full model
+
+
+
+## Process details
+
+**Answers 15 and 16:** We now fit the complete model
+```{r}
+fullmodel <- glm(PREMATURE ~ ., family = "binomial", data = prema)
+summary(fullmodel)
+```
+
+A reduced model is selected by optimizing the AIC criterion
+```{r}
+reduced<-step(fullmodel)
+```
+
+```{r}
+summary(reduced)
+```
+
+The reduced model is nested within the full model. The additional coefficients of the full model are tested for nullity.
+```{r}
+anova(reduced, fullmodel, test="LRT")
+```
+Here, these additional coefficients are not significantly different from 0. We therefore retain the reduced model. The detailed calculation of the p-value is as follows
+```{r}
+Dreduced = 352.04
+Dfull = 349.28
+LRT = Dreduced - Dfull
+pchisq(LRT,df = 7, lower.tail = FALSE)
+```
+
+
+
+**Answer 17:** We obtain the following confidence intervals for the odds ratios (exponentiation of the bounds of the confidence intervals on the coefficients)
+```{r}
+exp(cbind(OR=coef(reduced), confint(reduced)))
+```
+
+These confidence intervals are shown below: 
+```{r}
+library("ggplot2")
+plot_odds<-function(x, title = NULL){
+tmp<-data.frame(cbind(exp(coef(x)), exp(confint(x))))
+odds<-tmp[-1,]
+names(odds)<-c('OR', 'lower', 'upper')
+odds$vars<-row.names(odds)
+ticks<-c(seq(.1, 1, by =.1), seq(0, 10, by =1), seq(10, 100, by =10))
+
+ggplot(odds, aes(y= OR, x = reorder(vars, OR))) +
+geom_point() +
+geom_errorbar(aes(ymin=lower, ymax=upper), width=.2) +
+scale_y_log10(breaks=ticks, labels = ticks) +
+geom_hline(yintercept = 1, linetype=2) +
+coord_flip() +
+labs(title = title, x = 'Variables', y = 'OR') +
+theme_bw()
+}
+plot_odds(reduced)
+```
+Variables for which the confidence interval is less than 1 are protective factors. Variables for which the confidence interval is greater than 1 are risk factors. If the confidence interval intersects 1, then the factor is neither a protective nor a risk factor.
+
+## Precisions on the notion of contrast
+
+Be careful with categorical variables with more than two modalities! For example, MEMBRANNo is a protective factor, but in relation to the reference modality, which in this case is MEMBRANYes. If we want to test the effect of MEMBRANNo in relation to MEMBRANCertain, that's where things get complicated... It's a question of testing contrasts (nullity of linear combinations of coefficients), here for example $H_0 : \{beta_{MEMBRANNon} - \beta_{MEMBRANIncertain} = 0\}$. 
+
+This implies knowing the distribution of $\hat\beta_{MEMBRANNon} - \hat\beta_{MEMBRANIncertain}$. In fact, we know that $\hat\beta \approx \mathcal{N}(\beta, \Sigma_{\beta})$ where an estimator of $\Sigma_{\beta}$ can be obtained using the `vcov` function.
+```{r}
+Sigma = vcov(reduced)[c("MEMBRANNon", "MEMBRANIncertain"),c("MEMBRANNon", "MEMBRANIncertain")]
+Sigma
+```
+It can also be visualized as follows 
+```{r}
+confidenceEllipse(reduced,which.coef = c("MEMBRANNon", "MEMBRANIncertain"))
+```
+
+Finally, it's easy to obtain the distribution of $\hat\beta_{MEMBRANNon} - \hat\beta_{MEMBRANIncertain}$ since the linear combination of a Gaussian vector also has a Gaussian distribution. Its variance is obtained simply as follows 
+
+
+```{r}
+a = matrix(c(1,-1),2,1) # coefficients of the linear combination
+a
+s2 = t(a) %*% Sigma %*% a # here we obtain the variance of the contrast under consideration
+s2
+sqrt(s2) # standard deviation of the estimator (Std. Error)
+coef(reduced)["MEMBRANNon"] - coef(reduced)["MEMBRANIncertain"] # Estimated value (Estimate) 
+```
+So the variance of $\hat\beta_{MEMBRANNon} - \hat\beta_{MEMBRANIncertain}$ is equal to $0.5336854$ (standard deviation $0.73$), and its distribution is Gaussian. This makes it possible to construct confidence intervals on $\beta_{MEMBRANNon} - \beta_{MEMBRANIncertain}$, and to perform hypothesis tests. In R, you can use the `glht` function from the `multcomp` package: 
+```{r}
+library("multcomp")
+summary(glht(reduced,mcp(MEMBRAN = c("Non - Incertain = 0"))))
+# The various results can be found in the Linear Hypotheses section.
+```
+Here, the difference between the effect of the No modality and the effect of the Uncertain modality is not significant (p-value of 0.283).
+
+We could also have tested all possible two-by-two contrasts for the variable MEMBRAN
+```{r}
+contrMat(table(MEMBRAN),type = "Tukey") # Contrast matrix
+# We obtain the set of 2 by 2 tests: 
+summary(glht(reduced,mcp(MEMBRAN = contrMat(table(MEMBRAN),type = "Tukey"))))
+```
+Only the No - Yes difference appears significant. However, beware of multiple-test questions ... (https://math.unice.fr/~reynaudb/etienne.pdf), but we'll stop digressing here.
+
+
+# Evaluation of the final model
+
+**Answer 18:** Predicted values can be calculated using the `predict` function.
+```{r}
+S=predict(reduced, prema, type="response")
+head(S)
+boxplot(S~prema$PREMATURE)
+```
+
+**Answer 19:** Using a threshold of 0.5, we obtain the following results: 
+```{r}
+Y_hat=as.factor(ifelse(S>=0.5, "positive", "negative"))
+MatConf=table(Y_reel = prema$PREMATURE,Y_predit = Y_hat)
+MatConf
+```
+
+**Answer 20:** If we take the threshold associated with the probability of the last individual in the data table, we get
+```{r}
+threshold=S[length(S)]
+threshold
+decision=ifelse(S>=threshold, "positive", "negative") 
+ta=table(real=PREMATURE,decision)
+ta
+VP=ta[2,2]
+FP=ta[1,2]
+VN=ta[1,1]
+FN=ta[2,1]
+Se=VP/(VP+FN)
+Se # Sensitivity (Rate of true positives)
+Sp=VN/(VN+FP)
+Sp # Specificity (Rate of true negatives)
+1-Sp # False positive rate
+```
+
+**Answer 21:** Finally, we can plot the ROC curve.
+```{r}
+library(ROCR)
+pred=prediction(S[!is.na(S)], prema$PREMATURE[!is.na(S)])
+# ROC curve coordinates
+perf=performance(pred, "tpr", "fpr")
+# Plot ROC curve
+plot(perf)
+```
+
+Or using the plotROC package
+```{r}
+library("plotROC")
+Score = cbind.data.frame(Y = ifelse(PREMATURE == "positif",1,0),S = S)
+ggplot(Score, aes(d = Y, m = S)) + geom_roc()
+```
+
+**Answer 23:** The area under the curve is obtained by the following code
+```{r}
+AUC = performance(pred, "auc")
+attr(AUC, "y.values")[[1]]
+```
+
+**Answer 22 :** Interpretation of values
+```{r}
+vx = perf@x.values[[1]] # 1 - Sp
+vy = perf@y.values[[1]] # Se
+va = perf@alpha.values[[1]] # thresholds
+```
+
+To understand the values of alpha we run
+```{r}
+max(abs(sort(unique(S),decreasing=TRUE)-va[-1]))
+```
+
+```{r}
+sort(S,decreasing=TRUE)[1:10]
+perf@alpha.values[[1]][2:11]
+```
+Note that alpha corresponds to unique S values sorted from largest to smallest.
+
+vx and vy give the values of Se and 1-Sp. We find the values calculated previously
+```{r}
+vx[which(va==threshold)]
+vy[which(va==threshold)]
+```
+
+
+
+**Answer 24:** To determine the ideal threshold according to the corner rule, run
+```{r}
+dist = sqrt(vx^2+(1-vy)^2)
+head(dist)
+seuilideal=va[which.min(dist)]
+seuilideal
+```
+
+The results are as follows
+```{r}
+taideal=table(real=PREMATURE,ifelse(S>=seuilideal, "positif", "negatif"))
+ta
+taideal
+```
+
+We can compare the ROC curves of the different models
+```{r}
+library("plotROC")
+Score = cbind.data.frame(Y = ifelse(PREMATURE == "positif",1,0),
+                         M1 = model1$fitted.values,
+                         M2 = model2$fitted.values,
+                         M3 = model3$fitted.values,
+                         Mfull = predict(fullmodel,prema,type = "response"),
+                         Mreduced = predict(reduced,prema, type = "response"))
+longScore <- melt_roc(Score, "Y", c("M1", "M2", "M3", "Mfull", "Mreduced"))
+head(longScore)
+
+ggplot(longScore, aes(d = D, m = M, color = name)) + geom_roc()
+```
+Here we see that reduced and full are neck-and-neck. reduced was preferred to AIC because it provides a comparable fit, while consuming fewer parameters (lower risk of over-fitting).
+
+In conclusion, however, these results must be interpreted with caution. Here, the ROC curve was produced on the same data as that used for training... The results could be compared with those produced by cross-validation.
+
+```{r}
+formula_reduced = reduced$formula
+formula_reduced
+pLOO = rep(0,nrow(prema))
+for (i in 1:nrow(prema)){
+  fit = glm(formula_reduced, family = "binomial", data = prema[-i,])
+  pLOO[i] = predict(fit,prema[i,],family = "binomial", type = "response")
+}
+
+Score = cbind.data.frame(Y = ifelse(PREMATURE == "positif",1,0),
+                         Mreduced = predict(reduced,prema, type = "response"),
+                         Mreduced_cv = pLOO)
+longScore <- melt_roc(Score, "Y", c("Mreduced", "Mreduced_cv"))
+ggplot(longScore, aes(d = D, m = M, color = name)) + geom_roc()
+```
+Here we see that the performances estimated by cross-validation are significantly worse than the performances on the training sample.
+
+In fact, it could be that the actual performance is even worse, since all the data were involved in variable selection. The cross-validation performed a posteriori on the selected model only partially corrects this bias.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

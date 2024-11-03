@@ -1,0 +1,196 @@
+---
+title: 'Statistical inference : part 2, practice session 2'
+output:
+  html_document: default
+  pdf_document: default
+date: "2023-11-30"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Exercicse 6.14 
+
+
+Data importation: 
+```{r}
+geyser = read.csv(file = "geyser.csv", sep = ";")
+```
+
+
+```{r}
+plot(y ~ x, data = geyser)
+```
+
+(a) Implement the formulas given $\hat \beta_1$ and $\hat \beta_0$ 
+(you can also use `lm` to fit the model `lm(y ~ x, data = geyser)`)
+
+
+```{r}
+
+```
+
+
+(b) Under $H_0 : \beta_1 = 0$, we have: 
+$$
+t = \frac{\hat\beta_1}{s / \sqrt{\sum_{i=1}^{n}(x_i - \bar{x})^2}}  \sim t(n-2)
+$$
+where $t(n-2)$ stands for the $t$ distribution with $n-2$ degrees of freedom, and $s^2$ is the unbiaised estimator of the variance of the  noise: 
+$$
+s^2 = \frac{1}{n-2} \sum_{i=1}^{n} (y_i - \hat y_i)^2 = \frac{1}{n-2} \sum_{i=1}^{n} (y_i - \hat \beta_0 - \hat \beta_1 x_i)^2
+$$
+
+Thus, the course (p.132) says to reject $H_0$ if $|t| \geq t_{\alpha/2,n-2}$ where $t_{\alpha/2,n-2}$ is the upper $\alpha/2$ percentage point of the central $t$ distribution with $n-2$ degrees of freedom. This is motivated by the fact that: 
+$$
+P_{H_0}(|t| \geq t_{\alpha/2,n-2}) = P_{H_0}(t \geq t_{\alpha/2,n-2}) + P_{H_0}(t \leq -t_{\alpha/2,n-2})  = 2 P_{H_0}(t \geq t_{\alpha/2,n-2}) = 2 \times (\alpha/2) = \alpha
+$$
+where the second equality comes from the symmetry of the student distribution. 
+On R $t_{\alpha/2,n-2}$ can be obtained by `qt(alpha/2, n-2, lower.tail = F)`. Answer question by taking $\alpha=0.05$. 
+
+```{r}
+
+```
+
+(you can check your results by making `summary(lm(y ~ x, data = geyser))` and looking at the p-value in the summary, you reject the test at risk $\alpha$ if p-value $\leq \alpha$)
+
+```{r}
+
+```
+
+
+(c) Now come back to 
+$$
+t = \frac{\hat\beta_1 - \beta_1}{s / \sqrt{\sum_{i=1}^{n}(x_i - \bar{x})^2}}  \sim t(n-2)
+$$
+(here we do not assume $H_0$ : $\beta_1 = 0$ any more)
+
+Thus the formula can be obtained page 133 of the book: the following $100(1-\alpha)$ confidence interval for $\beta_1$ is
+$$
+\hat\beta_1 \pm t_{\alpha/2,n-2} \frac{s}{\sum_{i=1}^{n}(x_i - \bar{x})^2}
+$$
+Compute the confidence interval with $\alpha=0.05$. 
+
+```{r}
+
+```
+
+(you can check you results with `confint(lm(y~x, data = geyser))`)
+
+```{r}
+
+```
+
+
+(d)
+$$
+r^2 = \frac{SSR}{SST} = \frac{\sum_{i=1}^{n}(\hat y_i - \bar y)^2}{\sum_{i=1}^{n}(y_i - \bar{y})^2}
+$$
+
+(you can also check that $r^2 = \left(\frac{\mbox{cov}(x,y)}{\sigma_x \sigma_y}\right)^2$) where $\frac{\mbox{cov}(x,y)}{\sigma_x \sigma_y}$ is the linear correlation coefficient (you can use `cor(geyser$x, geyser$y)` to get this coefficient)
+
+```{r}
+
+```
+
+(you can also look at `Multiple R-squared` value when making `summary(lm(y ~ x, data = geyser))`)
+
+```{r}
+
+```
+
+
+# Exercise 7.53
+
+
+Import the data: 
+```{r}
+gas = read.csv("gas.csv",sep=";")
+head(gas)
+X = cbind(1,as.matrix(gas[,-1])) # add a first column of 1 for the intercept
+head(X)
+y = gas[,1]
+```
+
+
+
+(a) 
+
+Use the formula 
+$$
+\hat \beta = (X' X)^{-1} X' y
+$$
+
+With R, the function `t` stands for transposition, `solve` for matrix inversion, and the operator `%*%` stand for matrix multiplication. 
+
+
+```{r}
+
+```
+
+
+And $s^2$ is given by
+
+$$
+s^{2} = \frac{1}{n-k-1}\sum_{i=1}^{n}(y_i - \hat y_i)^2
+$$
+
+
+You can compare you results with the results of `lm`: 
+```{r}
+reg = lm(y ~ ., data = gas)
+reg$coefficients # hat beta
+reg_summary = summary(reg) 
+reg_summary$sigma # s 
+```
+
+(b) We know that $\mbox{cov}(\hat\beta) = \sigma^2 (X' X)^{-1}$ and $\sigma^2$ can be estimated by $s^2$ thus 
+$$
+\widehat{\mbox{cov}(\hat\beta)} = s^2   (X' X)^{-1}
+$$
+
+Thus do the computation of $\widehat{\mbox{cov}(\hat\beta)}$ using previous results:
+```{r}
+
+```
+
+
+
+You can check the value of $(X' X)^{-1}$
+```{r}
+reg_summary$cov.unscaled
+```
+
+or directly obtain $s^2   (X' X)^{-1}$ by making: 
+```{r}
+vcov(reg)
+```
+
+The diagonal elements gives the estimated variance of each parameter.
+
+(c) 
+
+Find $R^2$ and $R^2_{a}$, you can use the formulas of exercise 7.29:
+$$
+R^2 = 1 - SSE / \sum_i (y_i - \bar{y})^2 
+$$
+and 
+$$
+R^2_a = 1 - \frac{SSE/(n-k-1)}{ \sum_i (y_i - \bar{y})^2 /(n-1)}
+$$
+
+
+```{r}
+
+```
+
+
+You can check you results:
+```{r}
+reg_summary
+```
+where `Multiple R-squared` gives the $R^2$ and `Adjusted R-squared` gives $R_a^2$
+
+
+
