@@ -1,0 +1,87 @@
+---
+title: "EM algorithm for handling missing data"
+author: "Aude Sportisse & Vincent Vandewalle"
+date: "03/11/2024"
+output: html_document
+---
+
+```{r}
+library(mvtnorm) #library for multivariate normal density
+library(ggplot2) #library to have nice graphics
+```
+
+
+### Code an EM algorithm
+
+We consider $X\sim \mathcal{N}(\mu,\Sigma)$, with
+    $$\mu=\begin{pmatrix} 5 \\ -1
+    \end{pmatrix} \textrm{ and } \Sigma=\begin{pmatrix} 1 & 0.5 \\ 0.5 & 1
+    \end{pmatrix}.$$ We want to introduce $r=30\%$ of missing values in the variable $X_2$. We consider that the missing-data mechanism is MCAR.
+  
+
+**Q1)** Generate a bivariate normal set of sample size $n=100$, with mean $\mu$ and covariance matrix $\Sigma$ (use the package `mvtnorm`).
+
+```{r}
+
+```
+
+
+**Q2)** Introduce MCAR missing values in $X_2$. 
+
+```{r}
+
+```
+
+
+The goal is now to estimate the parameters $\mu$ and $\Sigma$ in presence of missing values in $X_2$ by using the EM algorithm.
+
+**Q3)** Propose a simple initialization for the EM algorithm. 
+
+```{r}
+
+```
+
+
+**Q4)** Write a function for the E-step and the M-step. 
+
+```{r}
+
+```
+
+
+**Q5)** Use the EM algorithm for $50$ iterations to estimate $\mu$ and $\Sigma$. Show the results. 
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+
+### Additionnal questions
+
+**Q6)** Vary $n$ and the percentage of missing values.
+
+**Q7)** We have estimated the parameters $\mu$ and $\Sigma$, can we impute the missing values? Try it!
+
+**Q8)** Do you think the algorithm will still work for MNAR data? If you have the time, try it!
+
+**Q9)** How to stop the EM algorithm? (other than by giving a predefined number of steps) 
+
+**Q10)** Extend the code for considering missing values in both $X_1$ and $X_2$.
+
+### Extra questions
+
+**Q11)** Implement the EM algorithm for a mixture of two bivariate normal distributions.
+
+**Q12)** Extend the algorithm for a multivariate normal distribution with $p$ variables with a missing-data mechanism MAR.
+
+
+**Q13)** Extend the algorithm for a multivariate normal distribution with $p$ variables with a missing-data mechanism MAR and with sparse covariance matrix structure. 
+
+**Q14)** Implement the EM algorithm for a mixture of two multivariate normal distributions with $p$ variables.
+
+**Q15**) Implement the EM algorithm for a mixture of two multivariate normal distributions with $p$ variables and with sparse covariance matrix structure.
+
