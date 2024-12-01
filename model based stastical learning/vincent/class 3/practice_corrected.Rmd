@@ -1,0 +1,808 @@
+---
+title: "EM algorithm for handling missing data"
+author: "Aude Sportisse & Vincent Vandewalle"
+date: "03/11/2024"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r}
+library(mvtnorm) #library for multivariate normal density
+library(ggplot2) #library to have nice graphics
+```
+
+
+### Code an EM algorithm
+
+We consider $X\sim \mathcal{N}(\mu,\Sigma)$, with
+    $$\mu=\begin{pmatrix} 5 \\ -1
+    \end{pmatrix} \textrm{ and } \Sigma=\begin{pmatrix} 1 & 0.5 \\ 0.5 & 1
+    \end{pmatrix}.$$ We want to introduce $r=30\%$ of missing values in the variable $X_2$. We consider that the missing-data mechanism is MCAR.
+  
+
+**Q1)** Generate a bivariate normal set of sample size $n=100$, with mean $\mu$ and covariance matrix $\Sigma$ (use the package `mvtnorm`).
+
+```{r}
+n = 100
+mu = c(5,-1)
+Sigma = matrix(c(1, 0.5, 0.5, 1), ncol=2, nrow=2)
+X = rmvnorm(n,mu,Sigma)
+head(X)
+```
+
+
+**Q2)** Introduce MCAR missing values in $X_2$. 
+
+```{r}
+missing_idx.mcar <- sample.int(n,0.3*n) #indexes of values which will be missing
+XNA <- X
+XNA[missing_idx.mcar,2] <- NA
+head(XNA)
+```
+
+
+The goal is now to estimate the parameters $\mu$ and $\Sigma$ in presence of missing values in $X_2$ by using the EM algorithm.
+
+**Q3)** Propose a simple initialization for the EM algorithm. 
+
+```{r}
+#we have to estimate mu and Sigma
+hat_mu <- apply(XNA,2,mean,na.rm=TRUE) # mean of each column removing missing values
+hat_mu
+hat_Sigma <- cov(XNA,use="complete.obs") # covariance matrix lines with complete observations
+# hat_Sigma <- var(XNA,na.rm=TRUE)
+hat_Sigma
+```
+
+
+**Q4)** Write a function for the E-step and the M-step. 
+
+```{r}
+Estep=function(X, mu, Sigma, missing_idx)
+{
+  n=nrow(X) 
+  
+  #all the elements in X1 are observed
+  s1_vec = X[,1]
+  s11_vec = X[,1]^2
+  
+  s2_vec = rep(0, n)
+  s22_vec = rep(0, n)
+  
+  #for observed elements in X2
+  #setdiff(1:n, missing_idx): observed elements
+  s2_vec[setdiff(1:n, missing_idx)] = X[setdiff(1:n, missing_idx),2]
+  s22_vec[setdiff(1:n, missing_idx)] = X[setdiff(1:n, missing_idx),2]^2
+  
+  #for missing elements in X2
+  s2_vec[missing_idx] = mu[2]+(Sigma[1,2]/Sigma[1,1])*(X[missing_idx,1]-mu[1])
+  s22_vec[missing_idx] = s2_vec[missing_idx]^2 + Sigma[2,2] - Sigma[1,2]^2/Sigma[1,1]
+  
+  
+  s12_vec = s1_vec*s2_vec
+  
+  return(list(s1=sum(s1_vec), s2=sum(s2_vec), s11=sum(s11_vec), s22=sum(s22_vec), s12=sum(s12_vec)))
+}
+
+Mstep=function(X, s1, s2, s11, s22, s12)
+{
+  n=nrow(X)
+  mu1=s1/n
+  mu2=s2/n
+  sigma1=s11/n-mu1^2
+  sigma2=s22/n-mu2^2
+  sigma12=s12/n-mu1*mu2
+  mu=c(mu1,mu2)
+  Sigma=matrix(c(sigma1, sigma12,sigma12,sigma2), nrow=2)
+  return(structure(list(mu=mu, Sigma=Sigma)))
+}
+```
+
+
+**Q5)** Use the EM algorithm for $50$ iterations to estimate $\mu$ and $\Sigma$. Show the results. 
+
+```{r}
+for(i in 1:50)
+{
+  # E step
+  E=Estep(XNA, hat_mu, hat_Sigma, missing_idx.mcar)
+  s1=E$s1
+  s11=E$s11
+  s2=E$s2
+  s22=E$s22
+  s12=E$s12
+  # M step
+  M=Mstep(XNA, s1, s2, s11, s22, s12)
+  hat_mu=M$mu
+  hat_Sigma=M$Sigma
+}
+```
+
+```{r}
+hat_mu
+hat_Sigma
+```
+
+
+### Additionnal questions
+
+**Q6)** Vary $n$ and the percentage of missing values.
+
+```{r}
+simu <- function(n, p, mu = c(5,-1), Sigma = matrix(c(1, 0.5, 0.5, 1), ncol=2, nrow=2)){
+  X = rmvnorm(n,mu,Sigma)
+  missing_idx.mcar <- sample.int(n,p*n) #indexes of values which will be missing
+  XNA <- X
+  XNA[missing_idx.mcar,2] <- NA
+  return(XNA)
+}
+
+EM <- function(X, niter=50){
+  missing_idx.mcar <- which(is.na(X[,2]))
+  hat_mu <- apply(X,2,mean,na.rm=TRUE) # mean of each column removing missing values
+  hat_Sigma <- cov(X,use="complete.obs") # covariance matrix lines with complete observations
+  for(i in 1:niter)
+  {
+    # E step
+    E=Estep(X, hat_mu, hat_Sigma, missing_idx.mcar)
+    s1=E$s1
+    s11=E$s11
+    s2=E$s2
+    s22=E$s22
+    s12=E$s12
+    # M step
+    M=Mstep(X, s1, s2, s11, s22, s12)
+    hat_mu=M$mu
+    hat_Sigma=M$Sigma
+  }
+  return(list(hat_mu=hat_mu, hat_Sigma=hat_Sigma))
+}
+
+# RMSE : Root Mean Squared Error
+# Compute the RMSE between the estimated parameters and the true parameters
+RMSE <- function(hat_mu, hat_Sigma, mu, Sigma){
+  return(sqrt(sum((hat_mu-mu)^2)+sum((hat_Sigma-Sigma)^2)))
+}
+```
+
+
+
+```{r}
+# Illustration of the previous functions
+mu = c(5,-1)
+Sigma = matrix(c(1, 0.5, 0.5, 1), ncol=2, nrow=2)
+X = simu(n=100, p=0.3, mu=mu, Sigma=Sigma)
+param = EM(X)
+RMSE(param$hat_mu, param$hat_Sigma, mu, Sigma)
+```
+
+We now illustrate the RMSE for different values of $n$ and $p$. For each value of $n$ and $p$, we compute the RMSE over 100 simulations.
+```{r}
+n = c(100, 200, 500, 1000)
+p = c(0.1, 0.3, 0.5, 0.7, 0.9)
+RMSE_values = matrix(0, nrow=length(n), ncol=length(p))
+for(i in 1:length(n)){
+  for(j in 1:length(p)){
+    RMSE_values[i,j] = 0
+    for(k in 1:100){
+      X = simu(n=n[i], p=p[j], mu=mu, Sigma=Sigma)
+      param = EM(X)
+      RMSE_values[i,j] = RMSE_values[i,j] + RMSE(param$hat_mu, param$hat_Sigma, mu, Sigma)
+    }
+    RMSE_values[i,j] = RMSE_values[i,j]/100
+  }
+}
+RMSE_values
+```
+
+We now make a heatmap of the RMSE values.
+```{r}
+df = data.frame(n=factor(rep(n, length(p))), p=factor(rep(p, each=length(n))), RMSE=as.vector(RMSE_values))
+ggplot(df, aes(x=n, y=p, fill=RMSE)) + geom_tile() + scale_fill_gradient(low="white", high="blue") + labs(title="RMSE values", x="Number of data (n)", y="Proportion of missing values (p)")
+```
+As expected, the RMSE increases with the proportion of missing values and decreases with the number of data.
+
+
+**Q7)** We have estimated the parameters $\mu$ and $\Sigma$, can we impute the missing values? Try it!
+
+```{r}
+# Impute missing values based on the estimated parameters
+impute <- function(X, hat_mu, hat_Sigma){
+  missing_idx.mcar <- which(is.na(X[,2]))
+  XNA <- X
+  XNA[missing_idx.mcar,2] <- hat_mu[2]+(hat_Sigma[1,2]/hat_Sigma[1,1])*(XNA[missing_idx.mcar,1]-hat_mu[1])
+  return(XNA)
+}
+
+mu = c(5,-1)
+Sigma = matrix(c(1, 0.5, 0.5, 1), ncol=2, nrow=2)
+X = simu(n=100, p=0.3, mu=mu, Sigma=Sigma)
+param = EM(X)
+
+imputed_X <- impute(X, param$hat_mu, param$hat_Sigma)
+missing_idx.mcar <- which(is.na(X[,2]))
+
+ggplot() + 
+  geom_point(aes(x=X[,1], y=X[,2]), color="blue") + 
+  geom_point(aes(x=imputed_X[missing_idx.mcar,1], y=imputed_X[missing_idx.mcar,2]), color="red") + 
+  labs(title="Imputed values", x="X1", y="X2") +
+  geom_rug(aes(x=X[missing_idx.mcar,1]), color="red") +
+  geom_abline(intercept=param$hat_mu[2] - (param$hat_Sigma[1,2]/param$hat_Sigma[1,1])*param$hat_mu[1], slope=param$hat_Sigma[2,1]/param$hat_Sigma[1,1], color="red")
+
+
+
+```
+
+**Q8)** Do you think the algorithm will still work for MNAR data? If you have the time, try it!
+
+No this algorithm is only accurate in the MCAR or MAR case. In the MNAR case, the missing values depend on the unobserved data an thus this needs to be modelled. 
+
+Simulation under the MNAR mechanism:
+```{r}
+# w : the weight of the missingness mechanism related to X2
+simuMNAR <- function(n, w = c(2,5), mu = c(5,-1), Sigma = matrix(c(1, 0.5, 0.5, 1), ncol=2, nrow=2)){
+  X = rmvnorm(n,mu,Sigma)
+  p = 1/(1 + exp(-w[1] - w[2]*X[,2]))
+  missing_idx.mnar <- which(rbinom(n, 1, p) == 1)
+  XNA <- X
+  XNA[missing_idx.mnar,2] <- NA
+  print(ggplot() + 
+    geom_point(aes(x=X[,1], y=X[,2]), color="blue") + 
+    # geom_rug(aes(x=X[missing_idx.mnar,1], y=X[missing_idx.mnar,2]), color="red")+
+    geom_point(aes(x=X[missing_idx.mnar,1], y=X[missing_idx.mnar,2]), color="red")+
+    labs(title="MNAR data: missing data in red", x="X1", y="X2"))
+  return(XNA)
+  
+}
+
+X = simuMNAR(100)
+```
+
+We see that the missing values are depending on X2 even given X1. The EM algorithm will not work in this case. 
+$$
+P(M_{i2}=1 | X_{i1}, X_{i2}) = \frac{1}{1 + \exp(-w_1 - w_2 X_{i2})} = P(M_{i2}=1 | X_{i2})
+$$
+We have:
+$$
+P(M_{i2}=1 | X_{i1}, X_{i2}) \neq P(M_{i2}=1 | X_{i1})
+$$
+Thus we are in the MNAR case.
+
+Let considered a large sample size and run the EM algorithm and see that it does not converge to the true parameters.
+
+
+```{r}
+X = simuMNAR(10000)
+param = EM(X)
+param$hat_mu
+param$hat_Sigma
+```
+
+
+**Q9)** How to stop the EM algorithm? (other than by giving a predefined number of steps) 
+
+We can stop the algorithm when the difference between the estimated parameters at two consecutive steps is small enough. Or more generally, we can stop the algorithm when the log-likelihood does not increase any more. Let notice that the log-likelihood should increase at each step of the algorithm. 
+
+
+```{r}
+ll <- function(X, mu, Sigma, missing_idx){
+  n = nrow(X)
+  loglik = 0
+  for(i in 1:n){
+    if(i %in% missing_idx){
+      # Compute the distribution of X1
+      loglik = loglik + dmvnorm(X[i,1], mu[1,drop=F], Sigma[1,1,drop=F], log=TRUE)
+    }else{
+      # Compute the distribution of X1 and X2
+      loglik = loglik + dmvnorm(X[i,], mu, Sigma, log=TRUE)
+    }
+  }
+  return(loglik)
+}
+
+X = simu(n=100, p=0.3)
+missing_idx <- which(is.na(X[,2]))
+ll(X, mu, Sigma, missing_idx)
+```
+
+Thus one can modify the EM algorithm as follows:
+
+```{r}
+EM <- function(X, niter=50){
+  missing_idx.mcar <- which(is.na(X[,2]))
+  hat_mu <- apply(X,2,mean,na.rm=TRUE) # mean of each column removing missing values
+  hat_Sigma <- cov(X,use="complete.obs") # covariance matrix lines with complete observations
+  loglik = rep(0, niter)
+  for(i in 1:niter)
+  {
+    # E step
+    E=Estep(X, hat_mu, hat_Sigma, missing_idx.mcar)
+    s1=E$s1
+    s11=E$s11
+    s2=E$s2
+    s22=E$s22
+    s12=E$s12
+    # M step
+    M=Mstep(X, s1, s2, s11, s22, s12)
+    hat_mu=M$mu
+    hat_Sigma=M$Sigma
+    # Compute the log-likelihood
+    loglik[i] = ll(X, hat_mu, hat_Sigma, missing_idx.mcar)
+    # Stop the algorithm if the log-likelihood does not increase anymore
+    if (i > 1 && loglik[i] - loglik[i-1] < 1e-6){
+      break
+    }
+    loglik = loglik[1:i]
+  }
+  return(list(hat_mu=hat_mu, hat_Sigma=hat_Sigma, loglik=loglik))
+}
+```
+
+
+```{r}
+X = simu(n=100, p=0.3)
+param = EM(X)
+plot(param$loglik, type="l", xlab="Number of iterations", ylab="Log-likelihood")
+```
+Thus monitoring the log-likelihood can be a good way to stop the algorithm.
+
+**Q10)** Extend the code for considering missing values in both $X_1$ and $X_2$.
+
+We need to modify the E-step in order to consider missing values for $X_1$, the M-step remains the same. 
+
+```{r}
+Estep_general = function(X, mu, Sigma)
+{
+  n=nrow(X) 
+  missing_idx1 = which(is.na(X[,1]))
+  missing_idx2 = which(is.na(X[,2]))
+  
+  s1_vec = rep(0, n)
+  s11_vec = rep(0, n)
+  
+  # for observed elements in X1 are observed
+  s1_vec[setdiff(1:n, missing_idx1)] = X[setdiff(1:n, missing_idx1),1]
+  s11_vec[setdiff(1:n, missing_idx1)] = X[setdiff(1:n, missing_idx1),1]^2
+  
+  #for missing elements in X1
+  s1_vec[missing_idx1] = mu[1]+(Sigma[1,2]/Sigma[2,2])*(X[missing_idx1,2]-mu[2])
+  s11_vec[missing_idx1] = s1_vec[missing_idx1]^2 + Sigma[1,1] - Sigma[1,2]^2/Sigma[2,2]
+  
+  
+  s2_vec = rep(0, n)
+  s22_vec = rep(0, n)
+  
+  #for observed elements in X2
+  s2_vec[setdiff(1:n, missing_idx2)] = X[setdiff(1:n, missing_idx2),2]
+  s22_vec[setdiff(1:n, missing_idx2)] = X[setdiff(1:n, missing_idx2),2]^2
+  
+  #for missing elements in X2
+  s2_vec[missing_idx2] = mu[2]+(Sigma[1,2]/Sigma[1,1])*(X[missing_idx2,1]-mu[1])
+  s22_vec[missing_idx2] = s2_vec[missing_idx2]^2 + Sigma[2,2] - Sigma[1,2]^2/Sigma[1,1]
+  
+  s12_vec = s1_vec*s2_vec
+  
+  return(list(s1=sum(s1_vec), s2=sum(s2_vec), s11=sum(s11_vec), s22=sum(s22_vec), s12=sum(s12_vec)))
+}
+```
+
+
+```{r}
+EM_general <- function(X, niter=50){
+  hat_mu <- apply(X,2,mean,na.rm=TRUE) # mean of each column removing missing values
+  hat_Sigma <- cov(X,use="complete.obs") # covariance matrix lines with complete observations
+  for(i in 1:niter)
+  {
+    # E step
+    E=Estep_general(X, hat_mu, hat_Sigma)
+    s1=E$s1
+    s11=E$s11
+    s2=E$s2
+    s22=E$s22
+    s12=E$s12
+    # M step
+    M=Mstep(X, s1, s2, s11, s22, s12)
+    hat_mu=M$mu
+    hat_Sigma=M$Sigma
+  }
+  return(list(hat_mu=hat_mu, hat_Sigma=hat_Sigma))
+}
+```
+
+
+```{r}
+simu_general <- function(n, p, mu = c(5,-1), Sigma = matrix(c(1, 0.5, 0.5, 1), ncol=2, nrow=2)){
+  X = rmvnorm(n,mu,Sigma)
+  missing_idx1 <- sample.int(n,p*n) #indexes of values which will be missing
+  missing_idx2 <- sample.int(n,p*n) #indexes of values which will be missing
+  XNA <- X
+  XNA[missing_idx1,1] <- NA
+  XNA[missing_idx2,2] <- NA
+  XNA <- XNA[!apply(is.na(XNA),1,all),] # remove rows with all missing values
+  return(XNA)
+}
+```
+
+```{r}
+X = simu_general(100, 0.3)
+param = EM_general(X)
+param
+```
+
+One should also modify the log-likelihood function to consider missing values in both $X_1$ and $X_2$. But we let this as an exercise for the reader ;-)
+
+
+### Extra questions
+
+**Q12)** Extend the algorithm for a multivariate normal distribution with $p$ variables with a missing-data mechanism MAR.
+
+We first consider the extension to the multivariate setting with $p$ variables before considering the mixture setting. 
+
+Let first recall that in the multivariate normal setting the likelihood is given by:
+$$
+\ell(\mu, \Sigma) = -\frac{n}{2} \log(|\Sigma|) - \frac{1}{2} \sum_{i=1}^n (X_i - \mu)^T \Sigma^{-1} (X_i - \mu)
+$$
+Which by using the trace can be written as:
+\begin{align*}
+\ell(\mu, \Sigma) &=& -\frac{n}{2} \log(|\Sigma|) - \frac{1}{2} \sum_{i=1}^n \text{tr}((X_i - \mu)^T \Sigma^{-1} (X_i - \mu))\\
+&= &-\frac{n}{2} \log(|\Sigma|) - \frac{1}{2} \sum_{i=1}^n \text{tr}(\Sigma^{-1} (X_i - \mu)(X_i - \mu)^T) \\
+&=&-\frac{n}{2} \log(|\Sigma|) - \frac{1}{2} \text{tr}(\Sigma^{-1} \sum_{i=1}^n (X_i - \mu)(X_i - \mu)^T)
+\end{align*}
+
+Moreover the MLE of $\mu$ is given by:
+$$
+\hat{\mu} = \frac{1}{n} \sum_{i=1}^n X_i
+$$
+Thus the likelihood can be written as:
+$$
+\ell(\hat\mu, \Sigma) = -\frac{n}{2} \log(|\Sigma|) - \frac{1}{2} \text{tr}(\Sigma^{-1} S)
+$$
+where $S = \sum_{i=1}^n (X_i - \hat\mu)(X_i - \hat\mu)^T$.
+
+The MLE of $\Sigma$ is given by:
+$$
+\hat{\Sigma} = \frac{1}{n} \sum_{i=1}^n (X_i - \hat\mu)(X_i - \hat\mu)^T
+$$
+
+Note also that the formula above also allows to impose constraints on the covariance matrix. For example, if we want to impose that the covariance matrix is diagonal, we can replace $\Sigma$ by a diagonal matrix in the likelihood, or if we want to impose that the covariance matrix is sparse, we can replace $\Sigma$ by a sparse matrix in the likelihood (see high dimensional Gaussian distribution).
+
+
+In the case of missing values we need to consider the expectation of the complete likelihood with respect to the missing values given the observed values and the current values of the parameters.
+
+$$
+Q(\theta, \theta^{(r)}) = E_{X^m|X^o, \theta^{(r)}}[\ell(\mu, \Sigma)]
+$$
+$$
+Q(\theta, \theta^{(r)}) = -\frac{n}{2} \log(|\Sigma|) - \frac{1}{2} \text{tr}(\Sigma^{-1} E[\sum_{i=1}^n (X_i - \mu)(X_i - \mu)^T | X_i^o, \theta^{(r)}])
+$$
+Where it can be shown that:
+$$
+E[\sum_{i=1}^n (X_i - \mu)(X_i - \mu)^T | X_i^o, \theta^{(r)}] = \sum_{i=1}^n E[(X_i - \mu)(X_i - \mu)^T | X_i^o, \theta^{(r)}] 
+$$
+Moreover, we have:
+$$
+E[(X_i - \mu)(X_i - \mu)^T | X_i^o, \theta^{(r)}] = (\hat X_i^{(r)} - \mu)(\hat X_i^{(r)} - \mu)^T + \tilde\Sigma_i^{(r)} 
+$$
+Where $\hat X_i^{(r)}$ is the imputed value of $X_i$ at the $r$-th iteration and $\hat \hat\Sigma_i^{(r)}$ is the covariance matrix of the imputed value of $X_i$ at the $r$-th iteration : 
+$$
+\hat {X_i^{m}}^{(r)} = {\mu_i^{m}}^{(r)} + {\Sigma_i^{mo}}^{(r)} {{\Sigma_i^{o}}^{(r)}}^{-1} (X_i^o - {\mu_i^{o}}^{(r)}) 
+$$
+With $\mu_i^{m}$ the expectation of the missing values of $X_i$ and $\mu_i^{o}$ the expectation of the observed values of $X_i$. $\Sigma_i^{mo}$ is the covariance matrix between the missing values and the observed values of $X_i$, $\Sigma_i^{o}$ is the covariance matrix of the observed values of $X_i$.
+
+And the covariance matrix of the imputed value of $X_i$ at the $r$-th iteration is given by: 
+$$
+\tilde\Sigma_{i}^{m^{(r)}} = \Sigma_i^{m^{(r)}} - \Sigma_i^{mo^{(r)}} \Sigma_i^{o^{(r)^{-1}}} \Sigma_i^{mo^{(r)}} 
+$$
+Thus $\tilde\Sigma_i^{(r)}$ it composed with the values $\tilde\Sigma_{i}^{m^{(r)}}$ for the indexes of missing values and the values $O$ for the indexes of the observed values and for the intersection of the observed and missing values.
+
+The M-step thus gives for $\mu$: 
+
+$$
+\hat{\mu}^{(r+1)} = \frac{1}{n} \sum_{i=1}^n \hat X_i^{(r)}
+$$
+Taking the expression of the expectation of the complete likelihood with respect to the missing values given the observed values and the current values of the parameters, evaluated in $\hat{\mu}^{(r)}$ we get: 
+$$
+Q(\hat{\mu}^{(r+1)},\Sigma ; \mu^{(r)}, \Sigma^{(r)}) = -\frac{n}{2} \log(|\Sigma|) - \frac{1}{2} \text{tr}(\Sigma^{-1} S^{(r)})
+$$
+With $S^{(r)} = \sum_{i=1}^n \left( (\hat X_i^{(r)} - \hat{\mu}^{(r)})(\hat X_i^{(r)} - \hat{\mu}^{(r)})^T + \hat\Sigma_i^{(r)} \right)$.
+
+The M-step for $\Sigma$ gives:
+$$
+\hat{\Sigma}^{(r+1)} = S^{(r)}
+$$
+Note the formulation above also allows to impose constraints on the covariance matrix. For example, if we want to impose that the covariance matrix is diagonal, we can replace $\Sigma$ by a diagonal matrix in the likelihood, or if we want to impose that the covariance matrix is sparse, we can replace $\Sigma$ by a sparse matrix (see high dimensional Gaussian distribution).
+
+Thus the bivariate setting can be extended to the multivariate setting by using the formulas above.
+
+```{r}
+Estep_mv <- function(X,mu,Sigma){
+  n = nrow(X)
+  p = ncol(X)
+  X_hat = X
+  naX = is.na(X)
+  Sigma_tilde = matrix(0, nrow=p, ncol=p) 
+  for (i in 1:n){
+    if (any(naX[i,])){
+      # Compute the imputed value
+      X_hat[i,naX[i,]] = mu[naX[i,]] + 
+        Sigma[naX[i,],!naX[i,]]%*%solve(Sigma[!naX[i,],!naX[i,]])%*%(X[i,!naX[i,]] - mu[!naX[i,]])
+      # Correspond to the sum of tilde Sigma_i
+      Sigma_tilde[naX[i,],naX[i,]] = Sigma_tilde[naX[i,],naX[i,]] +
+        Sigma[naX[i,],naX[i,]] - 
+        Sigma[naX[i,],!naX[i,]]%*%solve(Sigma[!naX[i,],!naX[i,]])%*%Sigma[!naX[i,],naX[i,]]
+    }
+  }
+  return(list(X_hat=X_hat, Sigma_tilde=Sigma_tilde))
+}
+
+Mstep_mv <- function(X_hat, Sigma_tilde){
+  n = nrow(X_hat)
+  p = ncol(X_hat)
+  mu = colMeans(X_hat, na.rm=TRUE)
+  Sigma = matrix(0, nrow=p, ncol=p)
+  for (i in 1:n){
+    Sigma = Sigma + (X_hat[i,] - mu)%*%t(X_hat[i,] - mu)
+  }
+  Sigma = (Sigma + Sigma_tilde)/n
+  return(list(mu=mu, Sigma=Sigma))
+}
+
+EM_mv <- function(X, niter=50){
+  p = ncol(X)
+  hat_mu = apply(X,2,mean,na.rm=TRUE) # mean of each column removing missing values
+  hat_Sigma = cov(X,use="complete.obs") # covariance matrix lines with complete observations
+  for(i in 1:niter)
+  {
+    # E step
+    E=Estep_mv(X, hat_mu, hat_Sigma)
+    X_hat = E$X_hat
+    Sigma_tilde = E$Sigma_tilde
+    # M step
+    M=Mstep_mv(X_hat, Sigma_tilde)
+    hat_mu=M$mu
+    hat_Sigma=M$Sigma
+  }
+  return(list(hat_mu=hat_mu, hat_Sigma=hat_Sigma))
+}
+```
+
+
+```{r}
+mu = c(5,-1)
+Sigma = matrix(c(1, 0.5, 0.5, 1), ncol=2, nrow=2)
+X = simu_general(1000, 0.3, mu = mu, Sigma = Sigma)
+EM_general(X)
+EM_mv(X)
+```
+
+Both codes give the same results! 
+
+Let now consider an example with more than two variables 
+```{r}
+# Add simulation function for simulating data with missing values in the general setting
+simu_mv <- function(n, pmiss, mu = c(5,-1), Sigma = matrix(c(1, 0.5, 0.5, 1), ncol=2, nrow=2)){
+  p = length(mu)
+  X = rmvnorm(n,mu,Sigma)
+  missing_idx = matrix(rbinom(n*p,1,pmiss), nrow=n, ncol=p)
+  XNA <- X
+  XNA[missing_idx == 1] <- NA
+  XNA <- XNA[!apply(is.na(XNA),1,all),] # remove rows with all missing values
+  return(XNA)
+}
+
+X = simu_mv(100, 0.3, mu = rep(0,5), Sigma = diag(5))
+EM_mv(X)
+```
+
+
+
+**Q11)** Implement the EM algorithm for a mixture of two bivariate normal distributions.
+
+See course with Charles! 
+
+
+
+**Q13)** Extend the algorithm for a multivariate normal distribution with $p$ variables with a missing-data mechanism MAR and with sparse covariance matrix structure. 
+
+Just need to impose the sparsity of the covariance matrix in the M-step. 
+
+```{r}
+# d is the dimension of the subspace (d < p)
+Mstep_mv_sparse <- function(X_hat, Sigma_tilde, d){
+  n = nrow(X_hat)
+  p = ncol(X_hat)
+  mu = colMeans(X_hat, na.rm=TRUE)
+  Sigma = matrix(0, nrow=p, ncol=p)
+  for (i in 1:n){
+    Sigma = Sigma + (X_hat[i,] - mu)%*%t(X_hat[i,] - mu)
+  }
+  Sigma = (Sigma +  + Sigma_tilde)/n
+  # impose the sparsity of the covariance matrix
+  decomp = eigen(Sigma) 
+  decomp$values[(d+1):p] = mean(decomp$values[(d+1):p]) # equalize the lowest eigenvalues
+  # reconstruct the covariance matrix
+  Sigma = decomp$vectors%*%diag(decomp$values)%*%t(decomp$vectors)
+  return(list(mu=mu, Sigma=Sigma))
+}
+```
+
+Including this in the EM algorithm we get:  
+```{r}
+EM_mv_sparse <- function(X, d=1, niter=50){
+  p = ncol(X)
+  hat_mu = apply(X,2,mean,na.rm=TRUE) # mean of each column removing missing values
+  hat_Sigma = cov(X,use="complete.obs") # covariance matrix lines with complete observations
+  for(i in 1:niter)
+  {
+    # E step
+    E=Estep_mv(X, hat_mu, hat_Sigma)
+    X_hat = E$X_hat
+    Sigma_tilde = E$Sigma_tilde
+    # M step
+    M=Mstep_mv_sparse(X_hat, Sigma_tilde, d=d)
+    hat_mu=M$mu
+    hat_Sigma=M$Sigma
+  }
+  return(list(hat_mu=hat_mu, hat_Sigma=hat_Sigma))
+}
+```
+
+
+```{r}
+X = simu_mv(100, 0.3, mu = rep(0,5), Sigma = diag(5))
+param = EM_mv_sparse(X, d=2)
+```
+
+One can also check the sparsity of the estimated covariance matrix: 
+```{r}
+eigen(param$hat_Sigma)
+```
+Where the first two eigenvalues are free, and the last three are equal. 
+
+
+```{r}
+# The estimated covariance matrix is: 
+param$hat_Sigma
+
+# Where it can be recomputed by the following formula:
+decomp = eigen(param$hat_Sigma) 
+decomp$vectors[,1:2] %*% diag(decomp$values[1:2] - decomp$values[3]) %*% t(decomp$vectors[,1:2]) +
+  decomp$values[3]*diag(5)
+# U %*% D %*% t(U) + lambda*I (with U a low rank matrix, and D a diagonal matrix)
+```
+
+This can be very usefull especially in high dimensional setting! 
+
+
+**Q14)** Implement the EM algorithm for a mixture of two multivariate normal distributions with $p$ variables.
+
+See course with Charles!
+
+**Q15**) Implement the EM algorithm for a mixture of two multivariate normal distributions with $p$ variables and with sparse covariance matrix structure.
+
+See course with Charles!
+
+
+**Q16)** Implement the EM algorithm for a mixture of $K$ multivariate normal distributions with $p$ variables and with missing values.
+
+This is the most general case, just need to add the mixutre setting in the above algorithm, just need to compute the class membership probabilities in the E-step (just based on observed variables), and to update the previous of formulas taking into account the weights given by $P(Z_i = k | X_i^o, \theta^{(r)})$ in the M-step. 
+
+For more info see for intance : https://inria.hal.science/hal-00921023/document
+
+```{r}
+# Initialization of the parameters
+init <- function(X, K){
+  n = nrow(X)
+  p = ncol(X)
+  Z = sample(1:K, n, replace=TRUE) # Sample the class membership
+  mu = matrix(0, nrow=K, ncol=p)
+  Sigma = array(0, dim=c(p,p,K))
+  for (k in 1:K){
+    mu[k,] = apply(X[Z==k,],2, mean, na.rm=TRUE)
+    Sigma[,,k] = cov(X[Z==k,],use="complete.obs")
+  }
+  pi = rep(1/K, K)
+  return(list(mu=mu, Sigma=Sigma, pi=pi))
+}
+
+param = init(X, 2)
+
+# Compute the posterior probabilities based on observed variables
+posterior <- function(X, mu, Sigma, pi){
+  n = nrow(X)
+  p = ncol(X)
+  K = nrow(mu)
+  naX = is.na(X)
+  post = array(0, dim=c(n,K))
+  for (i in 1:n){
+    for (k in 1:K){
+      post[i,k] = pi[k]*dmvnorm(X[i,!naX[i,]], mu[k,!naX[i,],drop=F], Sigma[,,k][!naX[i,],!naX[i,], drop = F])
+    }
+    post[i,] = post[i,]/sum(post[i,])
+  }
+  
+  return(post)
+}
+
+W = posterior(X, param$mu, param$Sigma, param$pi)
+head(W)
+
+# The Estep need to be updated to take into account the posterior probabilities
+# Which can be performed for each class separately 
+# Thus the only novelty is to take the wt parameter into account ! 
+# At this stage this does not change the code for X_hat, but the weight need to be considered to compute the Sigma_tilde
+Estep_mv_wt <- function(X,mu,Sigma, wt){
+  n = nrow(X)
+  p = ncol(X)
+  X_hat = X
+  naX = is.na(X)
+  Sigma_tilde = matrix(0, nrow=p, ncol=p) 
+  for (i in 1:n){
+    if (any(naX[i,])){
+      # Compute the imputed value
+      X_hat[i,naX[i,]] = mu[naX[i,]] + 
+        Sigma[naX[i,],!naX[i,]]%*%solve(Sigma[!naX[i,],!naX[i,]])%*%(X[i,!naX[i,]] - mu[!naX[i,]])
+      # Correspond to the sum of tilde Sigma_i
+      Sigma_tilde[naX[i,],naX[i,]] = Sigma_tilde[naX[i,],naX[i,]] +
+        wt[i]*(Sigma[naX[i,],naX[i,]] - 
+        Sigma[naX[i,],!naX[i,]]%*%solve(Sigma[!naX[i,],!naX[i,]])%*%Sigma[!naX[i,],naX[i,]])
+    }
+  }
+  return(list(X_hat=X_hat, Sigma_tilde=Sigma_tilde))
+}
+
+E = Estep_mv_wt(X,param$mu[1,],param$Sigma[,,1], W[,1])
+head(E$X_hat)
+E$Sigma_tilde
+
+# And now one consider the Mstep with the weights
+Mstep_mv_wt <- function(X_hat, Sigma_tilde, wt){
+  n = nrow(X_hat)
+  p = ncol(X_hat)
+  mu = ((wt %*% X_hat)/sum(wt))[1,] # take into account the weights
+  Sigma = matrix(0, nrow=p, ncol=p)
+  for (i in 1:n){
+    Sigma = Sigma + wt[i]*(X_hat[i,] - mu)%*%t(X_hat[i,] - mu)
+  }
+  Sigma = (Sigma + Sigma_tilde)/sum(wt)
+  return(list(mu=mu, Sigma=Sigma))
+}
+
+Mstep_mv_wt(X_hat = E$X_hat, Sigma_tilde = E$Sigma_tilde, wt = W[,1])
+
+
+# Thus putting all together we get (for the EM algorithm for a mixture of Gaussians with missing data)
+EM_mix_miss <- function(X, K, niter=50){
+  p = ncol(X)
+  param = init(X, K)
+  for(i in 1:niter)
+  {
+    # E step (for the weights)
+    W = posterior(X, param$mu, param$Sigma, param$pi)
+    for (k in 1:K){
+      # E step related to the k-th class / considering missing values
+      E=Estep_mv_wt(X, param$mu[k,], param$Sigma[,,k], W[,k])
+      X_hat = E$X_hat
+      Sigma_tilde = E$Sigma_tilde
+      # M step for class k
+      M=Mstep_mv_wt(X_hat, Sigma_tilde, W[,1])
+      param$mu[k,] = M$mu
+      param$Sigma[,,k] = M$Sigma
+    }
+    param$pi = colMeans(W) # update the class proportions
+  }
+  return(param)
+}
+
+res = EM_mix_miss(X,2)
+res
+```
+
+Remember that the EM algorithm is a local optimization algorithm, thus it is important to run it several times with different initializations and to keep the best solution. But to able to do one need to compute the log-likelihood of the data given the parameters and to keep the solution related to the highest log-likelihood. 
+
+
+
+
+
+

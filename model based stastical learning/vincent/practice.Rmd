@@ -22,14 +22,87 @@ We consider $X\sim \mathcal{N}(\mu,\Sigma)$, with
 **Q1)** Generate a bivariate normal set of sample size $n=100$, with mean $\mu$ and covariance matrix $\Sigma$ (use the package `mvtnorm`).
 
 ```{r}
+# Define parameters
 
+n <- 100 # Sample size
+mu <- c(5, -1) # Mean vector
+sigma <- matrix(c(10, 0.5, 0.5, 1), nrow = 2) # Covariance matrix
+
+```
+
+```{r}
+mu
+sigma
+
+```
+
+```{r}
+data <- rmvnorm(n, mean = mu, sigma = sigma)
+
+data_df <- data.frame(X1 = data[, 1], X2 = data[, 2])
+
+head(data_df)
+
+```
+```{r}
+#data
 ```
 
 
 **Q2)** Introduce MCAR missing values in $X_2$. 
 
 ```{r}
+# P(Mi2=1/ Xi1, Xi2)=0.3
+idx = rbinom(n, 1, 0.3)  #(no of samples, number of trails, probability of success)
+idx
+```
 
+```{r}
+
+```
+
+```{r}
+data_df_obs = data_df
+data_df_obs [ idx == 1, 2] = NA
+```
+
+```{r}
+#data_df_obs = data_df
+#data_df
+#data_df_obs [ idx == 1,]
+```
+
+
+```{r}
+data_df_obs
+```
+
+```{r}
+data_df_obs[,2]
+```
+
+
+
+```{r}
+
+mu1 = mean( data_df_obs[,1])
+mu2 = mean( data_df_obs[,2], na.rm = TRUE)
+```
+
+
+```{r}
+mu1
+mu2
+```
+
+```{r}
+cov_matrix <- cov(data_df_obs, use = "complete.obs")
+
+```
+
+
+```{r}
+cov_matrix
 ```
 
 
@@ -38,13 +111,153 @@ The goal is now to estimate the parameters $\mu$ and $\Sigma$ in presence of mis
 **Q3)** Propose a simple initialization for the EM algorithm. 
 
 ```{r}
-
+mu1
+mu2
+cov_matrix
 ```
 
 
 **Q4)** Write a function for the E-step and the M-step. 
 
 ```{r}
+data_df_obs[,1]
+```
+
+
+```{r}
+s1 = sum(data_df_obs[,1])
+s11 = sum((data_df_obs[,1])^2)
+
+```
+
+
+```{r}
+data_df_miss = is.na(data_df_obs[,2])
+data_df_miss
+```
+
+```{r}
+  X1 <- data_df_obs$X1
+  X2 <- data_df_obs$X2
+  
+  obs_indices <- !is.na(X2)
+  miss_indices <- is.na(X2)
+  
+```
+
+
+```{r}
+obs_indices
+
+miss_indices
+```
+
+
+```{r}
+
+  sigma11 <- cov_matrix[1, 1]
+  sigma12 <- cov_matrix[1, 2]
+  sigma22 <- cov_matrix[2, 2]
+```
+
+
+```{r}
+X2[obs_indices]
+```
+
+
+```{r}
+data_df_obs[obs_indices,2]
+```
+
+
+
+```{r}
+e_step <- function(data_df_obs, mu1, mu2, cov_matrix){
+  
+  
+    X1 <- data_df_obs$X1
+  X2 <- data_df_obs$X2
+  n=nrow(data_df_obs)
+  obs_indices <- !is.na(X2)
+  miss_indices <- is.na(X2)
+  
+    sigma11 <- cov_matrix[1, 1]
+  sigma12 <- cov_matrix[1, 2]
+  sigma22 <- cov_matrix[2, 2]
+  
+
+r21 <- sigma12 / sigma11
+r22 <- sigma22 - (r21^2 * sigma11)
+
+
+s2_obs <- sum(X2[obs_indices]) 
+s22_obs <- sum(X2[obs_indices]^2) 
+s12_obs <- sum(X1[obs_indices] * X2[obs_indices]) 
+
+
+exp_S2 <- mu2 + r21 * (X1[miss_indices] - mu1)
+exp_S22 <- (mu2 + r21 * (X1[miss_indices] - mu1))^2 + r22
+exp_S12 <- X1[miss_indices] * (mu2 + r21 * (X1[miss_indices] - mu1))
+
+S1 = sum(data_df_obs[,1])
+S11 = sum((data_df_obs[,1])^2)
+
+S2 <- s2_obs+ exp_S2
+S22 <- s22_obs + exp_S22
+S12 <- s12_obs + exp_S12
+
+return(list(s1 = S1, s11 = S11, s2 = S2, s22 = S22, s12 = S12))
+}
+
+```
+
+```{r}
+sufficient_stats <- e_step(data_df_obs,mu1, mu2, cov_matrix)
+```
+
+
+```{r}
+sufficient_stats
+```
+
+
+```{r}
+
+m_step <- function(data_df_obs,sufficient_stats) {
+  
+  n=nrow(data_df_obs)
+  # Extract sufficient statistics
+  s1 <- sufficient_stats$s1
+  s11 <- sufficient_stats$s11
+  s2 <- sufficient_stats$s2
+  s22 <- sufficient_stats$s22
+  s12 <- sufficient_stats$s12
+  
+  # Update mean
+  mu1 <- s1 / n
+  mu2 <- s2 / n
+  
+  # Update covariance matrix
+  sigma11 <- s11 / n - mu1^2
+  sigma22 <- s22 / n - mu2^2
+  sigma12 <- s12 / n - mu1 * mu2
+  
+  mu <- c(mu1, mu2)
+  sigma <- matrix(c(sigma11, sigma12, sigma12, sigma22), nrow = 2)
+  
+  return(list(mu = mu, sigma = sigma))
+}
+
+```
+
+
+```{r}
+for (i in 1:50){
+  E= e_step(data_df_obs, mu1, mu2, cov_matrix)
+  print(E)
+  M= m_step(data_df_obs, E)
+}
 
 ```
 
