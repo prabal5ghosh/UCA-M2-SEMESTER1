@@ -141,7 +141,97 @@ res <- sem(x, init.val$z, init.val$w, init.val$param, 1000)
 # ToDo 
 # 1. Try to simulate a data matrix from the block clustering model with parameter
 # param 
+
+# Fill the matrix block by block
+for (k in 1:K) {
+  for (g in 1:G) {
+    # Identify indices for current block
+    rows <- which(z == k)
+    cols <- which(w == g)
+    
+    # Simulate data for the block
+    block_mu <- param$a[[k]][[g]]$mu
+    block_var <- param$a[[k]][[g]]$var
+    x[rows, cols] <- rnorm(length(rows) * length(cols), mean = block_mu, sd = sqrt(block_var))
+  }
+}
+
+return(list(x = x, z = z, w = w))
+}
+
+# Example usage:
+n <- 25 # Number of rows
+d <- 25 # Number of columns
+simulated_data <- simulate_data(param, n, d)
+x <- simulated_data$x
+z <- simulated_data$z
+w <- simulated_data$w
+
+# Visualize the simulated data matrix
+heatmap(x, Rowv = NA, Colv = NA, scale = "none", col = terrain.colors(256))
 # 2. Try to recover the parameters with the function sem
+
+# Function to simulate data matrix
+simulate_data <- function(param, n_rows, n_cols) {
+  K <- length(param$prop.r)
+  G <- length(param$prop.c)
+  
+  # Determine row and column groups
+  row_groups <- sample(1:K, n_rows, replace = TRUE, prob = param$prop.r)
+  col_groups <- sample(1:G, n_cols, replace = TRUE, prob = param$prop.c)
+  
+  # Initialize the data matrix
+  data <- matrix(0, n_rows, n_cols)
+  
+  # Fill the matrix block by block
+  for (k in 1:K) {
+    for (g in 1:G) {
+      rows <- which(row_groups == k)
+      cols <- which(col_groups == g)
+      
+      block_mu <- param$a[[k]][[g]]$mu
+      block_var <- param$a[[k]][[g]]$var
+      data[rows, cols] <- rnorm(length(rows) * length(cols), mean = block_mu, sd = sqrt(block_var))
+    }
+  }
+  
+  return(list(x = data, z = row_groups, w = col_groups))
+}
+
+# Step 1: Simulate the data
+set.seed(123)  # For reproducibility
+n <- 50  # Number of rows
+d <- 50  # Number of columns
+simulated <- simulate_data(param, n, d)
+x <- simulated$x
+true_z <- simulated$z
+true_w <- simulated$w
+
+# Visualize the simulated data
+heatmap(x, Rowv = NA, Colv = NA, scale = "none", col = terrain.colors(256))
+
+# Step 2: Initialize and apply SEM
+K <- length(param$prop.r)  # Number of row clusters
+G <- length(param$prop.c)  # Number of column clusters
+init_val <- init(x, K, G)
+sem_result <- sem(x, init_val$z, init_val$w, init_val$param, niter = 100)
+
+# Extract results
+estimated_z <- sem_result$z
+estimated_w <- sem_result$w
+estimated_param <- sem_result$param
+log_likelihoods <- sem_result$ll
+
+# Visualize the estimated co-clustering
+heatmap(x[order(estimated_z), order(estimated_w)], Rowv = NA, Colv = NA, scale = "none", col = terrain.colors(256))
+
+# Compare true and estimated groupings
+table(True = true_z, Estimated = estimated_z)  # Row group comparison
+table(True = true_w, Estimated = estimated_w)  # Column group comparison
+
+# Print estimated parameters
+print(estimated_param)
+
 # 3. Try to recover the parameter with the package blockmodels
 install.packages("blockmodels")
 
