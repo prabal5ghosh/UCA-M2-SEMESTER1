@@ -1,0 +1,196 @@
+---
+title: "MBSL - week 3"
+author: "CB"
+date: "2024-10-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Clustering with GMM and the EM algorithm (part #2)
+
+In R, there are several packages that offer to cluster data with the Gaussian mixture model. The most popular one is certainly the `mclust` package:
+
+```{r}
+#install.packages('mclust')
+library(mclust)
+```
+
+Using the data we simulated during the previous course, we can test the Mclust software on it:
+
+```{r}
+library(mvtnorm)
+X = rbind(rmvnorm(100,c(0,0),0.4*diag(2)),
+          rmvnorm(200,c(-2,2),0.4*diag(2)))
+plot(X)
+```
+
+```{r}
+out = Mclust(X,G = 2)
+```
+
+
+```{r}
+# Diaplaying the estimated proportions
+out$parameters$pro
+
+# Displaying the group means (in columns!)
+out$parameters$mean
+```
+
+```{r}
+plot(X,col=out$class+1)
+points(t(out$parameters$mean),col=2:3,pch=19,cex=3)
+```
+
+The `mclust` package also proposes some visualization function:
+
+```{r}
+plot(out,what = "classification")
+```
+
+```{r}
+plot(out,what = "uncertainty")
+```
+
+> Exercise: could you explain how this plot is produced?
+
+This plot represents the uncertainty of missclassification of the data points, that is stored in the field `out$z`, which represents the posterior probabilities $P(Z=k|X=x_i)$ and this for $i=1,...,n$ and $k=1,...,K$.
+
+> Exercise: examine the plot `plot(out,what='BIC')` and comment.
+
+```{r}
+plot(out,what='BIC')
+```
+
+> Exercise: use the Mclust function to try to select the best number of groups between K=1,...,5.
+
+```{r}
+out = Mclust(X,G = 1:5)
+plot(out,what='BIC')
+```
+
+Here, we can see that the GMM model "EII" (i.e. kmeans) with 2 components (groups) is the best model according to BIC.
+
+In order to see the difference in term of model selection between BIC and ICL, we can simulate the following data:
+
+```{r}
+X = rbind(rmvnorm(100,c(0,0),0.4*diag(2)),
+          rmvnorm(100,c(-2,2),rbind(c(0.5,-0.3),c(-0.3,0.3))),
+          rmvnorm(100,c(-2,2),rbind(c(0.3,0.3),c(0.3,0.5))))
+cls = rep(1:3,rep(100,3))
+plot(X,col=cls)
+```
+
+```{r}
+out.bic = Mclust(X,G = 1:5)
+plot(out.bic,what="BIC")
+```
+
+```{r}
+out.bic
+```
+
+```{r}
+ICL = c()
+for (g in 1:5) ICL[g] = Mclust(X,G = g)$icl
+plot(ICL,type='b')
+```
+
+Here, we can see that ICL clearly picks 2 groups whereas BIC picks 3 groups, with in addition a big uncertainty between 2 and 3 groups.
+
+# Statistical learning in high dimensions
+
+## The curse of dimensionality
+
+```{r}
+p=1:50
+Vp = pi^(p/2) / gamma(p/2+1)
+plot(p,Vp,type='b')
+```
+
+## Subspace clustering
+
+Let's first load some high-dimensional data that are provided within the `MBCbook` package.
+
+```{r}
+#install.packages("MBCbook")
+library(MBCbook)
+```
+
+Let's consider the `usps358` data:
+
+```{r}
+data("usps358")
+dim(usps358)
+```
+
+
+```{r}
+Z = usps358$cls
+X = usps358[,-1]
+```
+
+In `X`, we have many examples of handwritten digits of 3, 5 and 8, that are described using small images of 16x16=256 pixels.
+
+```{r}
+plotIm <- function(x){
+  image(t(matrix(t(x),ncol=16,byrow=TRUE)[16:1,]),col=gray(255:0/255),axes=F)
+  box()
+}
+
+par(mfrow=c(2,5))
+for (i in 1:10){
+  ind = sample(nrow(X),1)
+  plotIm(X[ind,])
+}
+```
+
+> Exercise: cluster those data into 3 groups with kmeans and visualize the obtained group means.
+
+```{r}
+out.kmeans = kmeans(X,3)
+par(mfrow=c(1,3))
+for (k in 1:3) plotIm(out.kmeans$centers[k,])
+```
+
+Let's now consider the use of MPPCA / HDDC for clustering those data:
+
+```{r}
+#install.packages('HDclassif')
+library(HDclassif)
+
+out.hddc = hddc(X,3)
+par(mfrow=c(1,3))
+for (k in 1:3) plotIm(out.hddc$mu[k,])
+```
+
+It is also possible to compare the confusion matrices:
+
+```{r}
+# for kmeans
+table(Z,out.kmeans$cluster)
+
+# for HDDC
+table(Z,out.hddc$class)
+```
+
+It is also interesting to see how many dimensions have been used to model the different digits with HDDC:
+
+```{r}
+out.hddc$d
+```
+
+
+
+
+
+
+
+
+
+
+
+

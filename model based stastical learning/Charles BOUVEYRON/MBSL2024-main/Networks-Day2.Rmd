@@ -1,0 +1,159 @@
+---
+title: "Networks - day2"
+author: "CB"
+date: "2024-01-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Visualization of networks
+
+## The MDS algorithm
+
+```{r}
+A = cbind(c(0,1,1,1,0),
+          c(1,0,0,0,1),
+          c(1,0,0,0,1),
+          c(1,0,0,0,1),
+          c(0,1,1,1,0))
+image(A)
+```
+> Exercise: define a function `mds.loss` that encodes the loss function of MDS to minimize and then call an optimization algorithm to run MDS on the above data
+
+
+
+```{r}
+library(igraph); library(sna)
+
+mds.loss <-function(z,A){
+  # A is the adjacency matrix
+  # Z are the 2-dimensional latent position
+  # (provided as a vector)
+  g = graph_from_adjacency_matrix(as.matrix(A))
+  D.in = shortest.paths(g)
+  Z = matrix(z,ncol = 2)
+  D.out = as.matrix(dist(Z)) # The Euclidean distance in R^2 
+  loss = sum((D.in - D.out)^2)
+}
+
+# Optimization of the MDS loss within a MDS function
+my.MDS <- function(A){
+  n = nrow(A)
+  z.init = runif(2*n,-1,1)
+  out = optim(z.init,mds.loss,A=A,method="SANN")
+  list(Z.final = matrix(out$par,ncol = 2),
+         loss = out$value,
+         Z.init = matrix(z.init,ncol=2))
+}
+
+# Running the MDS algorithm
+res = my.MDS(A)
+
+# Visualization of the latent representation
+par(mfrow=c(1,2))
+gplot(A,coord=res$Z.init,edge.col="gray")
+title(main = "Initialization of MDS")
+gplot(A,coord=res$Z.final,edge.col="gray")
+title(main=paste("MDS solution (loss=",round(res$loss,3),")",sep=''))
+```
+For simpler networks, the loss can be very low:
+
+```{r}
+A = cbind(c(0,1,1,1),
+          c(1,0,1,0),
+          c(1,1,0,0),
+          c(1,0,0,0))
+
+# Running the MDS algorithm
+res = my.MDS(A)
+
+# Visualization of the latent representation
+par(mfrow=c(1,2))
+gplot(A,coord=res$Z.init,edge.col="gray")
+title(main = "Initialization of MDS")
+gplot(A,coord=res$Z.final,edge.col="gray")
+title(main=paste("MDS solution (loss=",round(res$loss,3),")",sep=''))
+```
+Let's now apply this method on the Sampson Monk data:
+
+```{r}
+#install.packages("VBLPCM")
+library(VBLPCM)
+data(sampson)
+library(network)
+A = as.matrix.network.adjacency(samplike)
+
+# Running the MDS algorithm
+res = my.MDS(A)
+
+# Visualization of the latent representation
+par(mfrow=c(1,2))
+gplot(A,coord=res$Z.init,edge.col="gray")
+title(main = "Initialization of MDS")
+gplot(A,coord=res$Z.final,edge.col="gray")
+title(main=paste("MDS solution (loss=",round(res$loss,3),")",sep=''))
+```
+
+## The latent space model
+
+> Write a function `my.LSM` which implements the LSM algorithm.
+
+```{r}
+LSM.loss <- function(par,A){
+  alpha = par[1]
+  Z = matrix(par[-1],ncol=2)
+  D.out = as.matrix(dist(Z))
+  log.lik =  sum(A * (alpha - D.out) - log(1+exp(alpha - D.out)))
+  return(-log.lik)
+}
+
+my.LSM <- function(A){
+  n = nrow(A)
+  alpha.init = 0
+  z.init = runif(2*n,-1,1)
+  par.init = c(alpha.init,z.init) 
+  out = optim(par.init,LSM.loss,A=A,method="SANN")
+  list(alpha = out$par[1],
+      Z.final = matrix(out$par[-1],ncol = 2),
+      loss = out$value,
+      Z.init = matrix(z.init,ncol=2))
+}
+
+A = cbind(c(0,1,1,1),
+          c(1,0,1,0),
+          c(1,1,0,0),
+          c(1,0,0,0))
+
+# Running the LSM algorithm
+res = my.LSM(A)
+
+# Visualization of the latent representation
+par(mfrow=c(1,2))
+gplot(A,coord=res$Z.init,edge.col="gray")
+title(main = "Initialization of MDS")
+gplot(A,coord=res$Z.final,edge.col="gray")
+title(main=paste("LSM solution (loss=",round(res$loss,3),")",sep=''))
+```
+
+Let's now apply this function to the Sampson data:
+
+```{r}
+library(VBLPCM); library(network)
+data(sampson)
+A = as.matrix.network.adjacency(samplike)
+
+# Running the MDS and LSM algorithm
+res.MDS = my.MDS(A)
+res.LSM = my.LSM(A)
+
+# Visualization of the latent representation
+par(mfrow=c(1,2))
+gplot(A,coord=res.MDS$Z.final,edge.col="gray")
+title(main = "MDS solution")
+gplot(A,coord=res.LSM$Z.final,edge.col="gray")
+title(main = "LSM solution")
+```
+

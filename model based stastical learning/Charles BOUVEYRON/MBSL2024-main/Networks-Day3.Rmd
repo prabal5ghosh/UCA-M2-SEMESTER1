@@ -1,0 +1,199 @@
+---
+title: "Networks - day3"
+author: "CB"
+date: "2024-01-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## The latent space model
+
+> Write a function `my.LSM` which implements the LSM algorithm.
+
+```{r}
+LSM.loss <- function(par,A){
+  alpha = par[1]
+  Z = matrix(par[-1],ncol=2)
+  D.out = as.matrix(dist(Z))
+  log.lik =  sum(A * (alpha - D.out) - log(1+exp(alpha - D.out)))
+  return(-log.lik)
+}
+
+my.LSM <- function(A){
+  n = nrow(A)
+  alpha.init = 0
+  z.init = runif(2*n,-1,1)
+  par.init = c(alpha.init,z.init) 
+  out = optim(par.init,LSM.loss,A=A,method="SANN")
+  list(alpha = out$par[1],
+      Z.final = matrix(out$par[-1],ncol = 2),
+      loss = out$value,
+      Z.init = matrix(z.init,ncol=2))
+}
+
+A = cbind(c(0,1,1,1),
+          c(1,0,1,0),
+          c(1,1,0,0),
+          c(1,0,0,0))
+
+# Running the LSM algorithm
+res = my.LSM(A)
+
+# Visualization of the latent representation
+library(sna)
+gplot(A,coord=res$Z.final,edge.col="gray")
+title(main=paste("LSM solution (loss=",round(res$loss,3),")",sep=''))
+```
+
+Let's now apply this function to the Sampson data:
+
+```{r}
+library(VBLPCM); library(network)
+data(sampson)
+A = as.matrix.network.adjacency(samplike)
+
+# Running the MDS and LSM algorithm
+res.LSM = my.LSM(A)
+
+# Visualization of the latent representation
+par(mfrow=c(1,2))
+gplot(A,coord=res.LSM$Z.final,edge.col="gray")
+title(main = "LSM solution")
+```
+
+
+> Write down the equation for the posterior probabilities $P(X_{ij}=1|\hat{\alpha},\hat{Z})$
+
+$$P(X_{ij}=1|\hat{\alpha},\hat{Z}) = \frac{exp(\hat{\alpha} - \|\hat{Z}_i - \hat{Z}_j\|^2)}{1+exp(\hat{\alpha} - \|\hat{Z}_i - \hat{Z}_j\|^2)}$$
+
+> Code a function that calculates those probabilities from the LSM solution.
+
+```{r}
+LSM.post <- function(alpha,Z){
+  D = as.matrix(dist(Z))
+  P = exp(alpha - D) / (1 + exp(alpha - D))
+  P
+}
+
+P = LSM.post(res.LSM$alpha,res.LSM$Z.final)
+par(mfrow=c(1,2))
+image(A)
+image(P)
+```
+
+> Modify the LSM function to take into account some covariates $Y_{ij}$:
+
+```{r}
+LSM2.loss <- function(par,A,Y){
+  alpha = par[1]
+  beta = par[2]
+  Z = matrix(par[-c(1,2)],ncol=2)
+  D.out = as.matrix(dist(Z))
+  log.lik =  sum(A * (alpha + beta*Y - D.out) - 
+                   log(1+exp(alpha + beta*Y - D.out)))
+  return(-log.lik)
+}
+
+my.LSM2 <- function(A,Y){
+  n = nrow(A)
+  alpha.init = 0
+  beta.init = 1
+  z.init = runif(2*n,-1,1)
+  par.init = c(alpha.init,beta.init,z.init) 
+  out = optim(par.init,LSM2.loss,A=A,Y=Y,method="SANN")
+  list(alpha = out$par[1],
+       beta = out$par[2],
+       Z.final = matrix(out$par[-c(1,2)],ncol = 2),
+       loss = out$value,
+       Z.init = matrix(z.init,ncol=2))
+}
+
+LSM2.post <- function(alpha,beta,Z,Y){
+  D = as.matrix(dist(Z))
+  P = exp(alpha + beta*Y - D) / (1 + exp(alpha + beta*Y - D))
+  P
+}
+```
+
+```{r}
+load("BishopNet-A-X.Rdata")
+# A is the adjacency matrix
+# X are the covariate data about the nodes
+
+# subsample the data with dates
+sel = which(X$debut > 590)
+A = A[sel,sel]
+X = X[sel,]
+
+# Computing the matrix Y
+N = nrow(A)
+Y = matrix(0,N,N)
+X$debut[is.na(X$debut)] = 0
+X$fin[is.na(X$fin)] = 0
+for (i in 1:(N-1)){
+  for (j in (i+1):N){
+    if ((X$debut[i] < X$fin[j]) & (X$fin[i] > X$debut[j])){
+      Y[i,j] = Y[j,i] = X$fin[j] - X$debut[i]
+      }
+    else if((X$debut[j] < X$fin[i]) & (X$fin[j] > X$debut[i])){
+      Y[i,j] = Y[j,i] = X$fin[i] - X$debut[j]
+      }
+    else Y[i,j] = Y[j,i] = 0
+  }
+}
+
+par(mfrow=c(1,2))
+image(A,useRaster = TRUE)
+image(log(Y),useRaster = TRUE)
+```
+
+```{r}
+res = my.LSM(A)
+res2 = my.LSM2(A,Y)
+
+par(mfrow=c(1,2))
+gplot(A,coord=res$Z.final,edge.col="gray")
+title(main = "LSM")
+gplot(A,coord=res2$Z.final,edge.col="gray")
+title(main = "LSM + Y")
+```
+
+# Clustering of networks
+
+## The latent position cluster model (LPCM)
+
+Let's start with the extension of the latent position model to the case of clustering and the Sampson network data.
+
+```{r}
+#install.packages("VBLPCM")
+library(VBLPCM)
+data(sampson)
+
+library(network)
+A = as.matrix.network.adjacency(samplike)
+```
+
+
+First of all, it is interesting to higlight that the Sampson data are here provided in a specific order which is related to some latent clusters (the origins of the Monks), but most of the time, the adjacency matrices arrive in a random order looking as this:
+
+
+```{r}
+par(mfrow=c(1,2))
+image(A)
+ind = sample(18,18)
+image(A[ind,ind])
+```
+
+On simulated data, this difference may be even more clear. Here, we simulate data according to the LPCM model:
+
+> simulate a network with 3 clusters according to the LPCM model.
+
+```{r}
+
+```
+
+
+
