@@ -1,0 +1,248 @@
+---
+title: "Correction of co-clustering practice session"
+author: "Vincent Vandewalle"
+date: "2024-12-02"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(1234)
+```
+
+
+# 1. Simulate data from the latent block model 
+
+## Parameters of the model in the case of continuous data
+
+```{r}
+# Parameters of the model
+prop.r <- c(0.5, 0.5) # proportions for rows
+prop.c <- c(0.5, 0.5) # proportions for columns
+a <- vector("list", 2)
+a[[1]][[1]] <- list(mu = 0, var = 1) # mean and variance for the first row and column block
+a[[1]][[2]] <- list(mu = 0.5, var = 1) # mean and variance for the first row and second column block
+a[[2]][[1]] <- list(mu = -0.5, var = 1) # mean and variance for the second row and first column block
+a[[2]][[2]] <- list(mu = -0.25, var = 1) # mean and variance for the second row and second column block
+
+# Specific parameter for co-clustering (mu, sigma)
+param <- list(prop.r = prop.r, prop.c = prop.c, a = a)
+# param
+```
+
+## Function to simulated data 
+
+- `x`: data
+- `z`: row partition
+- `w`: column partition
+
+The strategy is first to simulate the row and the column partition, then to simulate each entry of the data matrix given its row and its column.
+
+```{r}
+# Fonction which simulates data from the latent block model
+# param: parameters of the model
+# n: number of rows
+# d: number of columns
+# return: list with data matrix x, row partition z and column partition w
+simulate_data <- function(param, n, d) {
+  K <- length(param$prop.r)
+  G <- length(param$prop.c)
+  z <- sample(1:K, size = n, replace = TRUE, prob = param$prop.r)
+  w <- sample(1:G, size = d, replace = TRUE, prob = param$prop.c)
+  x <- matrix(0, n, d)
+  for (k in 1:K) {
+    for (g in 1:G) {
+      rows <- z == k
+      cols <- w == g
+      # sample data from block (k, g) with it specific mean and variance
+      x[rows, cols] <- rnorm(sum(rows) * sum(cols), 
+                             mean = param$a[[k]][[g]]$mu, 
+                             sd = sqrt(param$a[[k]][[g]]$var))
+    }
+  }
+  return(list(x = x, z = z, w = w))
+}
+simulated_data <- simulate_data(param, 250, 250)
+```
+
+The data matrix can be plotted as follows: 
+```{r}
+heatmap(simulated_data$x,Colv = NA, Rowv = NA, labRow = NA , labCol = NA, scale = "none")
+```
+
+After reorderring the rows and the columns by cluster we get the following heatmap
+```{r}
+heatmap(simulated_data$x[order(simulated_data$z),order(simulated_data$w)],
+        Colv = NA, Rowv = NA, labRow = NA , labCol = NA, scale = "none")
+```
+
+where we see the cluster structure.
+
+
+# 2. Estimation based on hand crafted SEM algorithm 
+
+Definition of functions for parameters estimation
+
+```{r}
+# Calculation of row group probabilities given column groups (default), 
+# or vice versa (used for the stochastic sampling step)
+# x: data matrix
+# w: column partition
+# param: parameters of the model
+# row: if TRUE, the function calculates the row group probabilities given column groups, otherwise the column group probabilities given row groups
+# return: matrix of posterior probabilities
+posterior <- function(x, w, param, row = TRUE) {
+  n <- nrow(x)
+  d <- ncol(x)
+  K <- length(param$prop.r)
+  G <- length(param$prop.c)
+  # Rows' groups with fixed column groups
+  if (row) {
+    # lnf: joint log-likelihood of each row with fixed value of the column cluster and considering different possible row clusters
+    lnf <- matrix(0, n, K)
+    for (k in 1:K) {
+      for (g in 1:G) {
+        data <- x[, w == g, drop = FALSE]
+        lnf[, k] <- lnf[, k] + rowSums(dnorm(data, param$a[[k]][[g]]$mu,
+                                             sqrt(param$a[[k]][[g]]$var), log = TRUE))
+      }
+      lnf[, k] <- lnf[, k] + log(param$prop.r[k])
+    }
+  }
+  # Columns' groups with fixed row groups
+  else {
+    z <- w # for more coherence
+    lnf <- matrix(0, d, G)
+    for (g in 1:G) {
+      for (k in 1:K) {
+        data <- x[z == k, , drop = FALSE]
+        lnf[, g] <- lnf[, g] + colSums(dnorm(data, param$a[[k]][[g]]$mu,
+                                             sqrt(param$a[[k]][[g]]$var), log = TRUE))
+      }
+      lnf[, g] <- lnf[, g] + log(param$prop.c[g])
+    }
+  }
+  # Calculation of posterior probabilities
+  t <- prop.table(exp(sweep(lnf, 1, apply(lnf, 1, max), "-")), 1)
+  return(t)
+}
+
+# Mstep 
+mstep <- function(x, z, w) {
+  K <- max(z)
+  G <- max(w)
+  param <- NULL
+  param$prop.r <- prop.table(table(z))
+  param$prop.c <- prop.table(table(w))
+  param$a <- vector("list", K)
+  for (k in 1:K) {
+    param$a[[k]] <- vector("list", G)
+    for (g in 1:G) {
+      data <- as.vector(x[z == k, w == g])
+      param$a[[k]][[g]]$mu <- mean(data)
+      param$a[[k]][[g]]$var <- var(data) * (length(data) - 1) / length(data)
+    }
+  }
+  return(param)
+}
+
+
+# Computation of the completed log-likelihood
+loglikelihood <- function(x, z, w, param) {
+  K <- length(param$prop.r)
+  G <- length(param$prop.c)
+  ll <- 0
+  for (k in 1:K) {
+    for (g in 1:G) {
+      data <- as.vector(x[z == k, w == g])
+      ll <- ll + sum(dnorm(data, param$a[[k]][[g]]$var,
+                           sqrt(param$a[[k]][[g]]$var), log = TRUE))
+    }
+  }
+  return(ll)
+}
+
+# Beware of the disappearance of modality
+# Version S1 - M1 - S2 - M2 (another possible version S1 - S2 - M)
+# Possibility of semi-supervised learning by fixing the row or column partition
+sem <- function(x, z, w, param, niter = 100, missz = TRUE, missw = TRUE) {
+  ll <- NULL
+  for (i in 1:niter) {
+    K <- length(param$prop.r)
+    G <- length(param$prop.c)
+    if (missz) {
+      tik <- posterior(x, w, param)
+      if (any(is.na(tik))) {
+        break
+      }
+      # Sampling of the row partition
+      z <- apply(tik, 1, function(y) sample(K, 1, prob = y))
+      z <- as.numeric(as.factor(z)) # Handling modalities disappearance
+    }
+    # Update of the parameters given the row partition and the column partition
+    param <- mstep(x, z, w)
+    if (missw) {
+      sjg <- posterior(x, z, param, row = FALSE)
+      if (any(is.na(sjg))) {
+        break
+      }
+      w <- apply(sjg, 1, function(y) sample(G, 1, prob = y))
+      w <- as.numeric(as.factor(w)) # Handling modalities disappearance
+    }
+    param <- mstep(x, z, w)
+    # Completion of log-likelihood tracking: useful for monitoring the convergence of the algorithm
+    ll <- c(ll, loglikelihood(x, z, w, param))
+  }
+  return(list(z = z, w = w, param = param, ll = ll))
+}
+
+# Initialisation by random partition
+init <- function(x, K, G) {
+  n <- nrow(x)
+  d <- ncol(x)
+  z <- sample(K, n, replace = TRUE)
+  w <- sample(G, d, replace = TRUE)
+  param <- mstep(x, z, w)
+  return(list(z = z, w = w, param = param))
+}
+```
+
+
+Parameters estimation by SEM
+
+```{r}
+init.val <- init(simulated_data$x, 2, 2)
+res <- sem(simulated_data$x, init.val$z, init.val$w, init.val$param, 1000)
+plot(res$ll[-(1:10)]) # Minitoring of the completed log-likelihood
+res$param # Estimated parameters
+```
+
+Comparison of the partitions
+```{r}
+table(simulated_data$z , res$z)
+table(simulated_data$w , res$w)
+```
+Thus the true rows and columns partitions are exactly recovered! 
+
+The comparison can also be automatically performed by using the Adjusted Rand Index which is invariant up to label permutation. 
+
+```{r}
+library("mclust")
+adjustedRandIndex(simulated_data$z , res$z)
+adjustedRandIndex(simulated_data$w , res$w)
+```
+
+# 3. Test on the package `blockmodels`
+
+
+```{r}
+# install.packages("blockmodels")
+library(blockmodels)
+bm_model = BM_gaussian(membership_type = "LBM", adj = simulated_data$x)
+bm_model$estimate()
+which.max(bm_model$ICL)
+bm_model$memberships[[4]]$plot()
+bm_model$model_parameters
+```
